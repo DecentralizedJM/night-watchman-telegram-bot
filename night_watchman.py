@@ -68,7 +68,10 @@ class NightWatchman:
         
         self.running = True
         self.offset = 0
-        self.client = httpx.AsyncClient(timeout=httpx.Timeout(35.0))
+        self.client = httpx.AsyncClient(
+            timeout=httpx.Timeout(35.0),
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5)
+        )
         
         logger.info("🌙 Night Watchman initialized")
     
