@@ -9,7 +9,7 @@ import os
 import sys
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict
-import requests
+import httpx
 from dotenv import load_dotenv
 
 from config import Config
@@ -68,6 +68,7 @@ class NightWatchman:
         
         self.running = True
         self.offset = 0
+        self.client = httpx.AsyncClient(timeout=httpx.Timeout(35.0))
         
         logger.info("🌙 Night Watchman initialized")
     
@@ -76,18 +77,18 @@ class NightWatchman:
         logger.info("🌙 Night Watchman starting patrol...")
         
         # Get bot info
-        bot_info = self._get_bot_info()
+        bot_info = await self._get_bot_info()
         if bot_info:
             logger.info(f"Bot: @{bot_info.get('username', 'unknown')}")
         
         # Start polling
         await self._poll_updates()
     
-    def _get_bot_info(self) -> Optional[Dict]:
+    async def _get_bot_info(self) -> Optional[Dict]:
         """Get bot information"""
         try:
             url = f"https://api.telegram.org/bot{self.token}/getMe"
-            response = requests.get(url, timeout=10)
+            response = await self.client.get(url, timeout=10.0)
             data = response.json()
             if data.get('ok'):
                 return data.get('result')
@@ -108,7 +109,7 @@ class NightWatchman:
                     'allowed_updates': ['message', 'chat_member']
                 }
                 
-                response = requests.get(url, params=params, timeout=35)
+                response = await self.client.get(url, params=params, timeout=35.0)
                 data = response.json()
                 
                 if data.get('ok'):
@@ -120,7 +121,7 @@ class NightWatchman:
                     logger.error(f"API error: {data}")
                     await asyncio.sleep(5)
                     
-            except requests.exceptions.Timeout:
+            except httpx.TimeoutException:
                 continue
             except Exception as e:
                 logger.error(f"Polling error: {e}")
@@ -212,7 +213,7 @@ class NightWatchman:
         
         # Delete the message
         if self.config.AUTO_DELETE_SPAM:
-            deleted = self._delete_message(chat_id, message_id)
+            deleted = await self._delete_message(chat_id, message_id)
             if deleted:
                 self.stats['messages_deleted'] += 1
                 logger.info(f"🗑️ Deleted spam message from {user_name}")
@@ -224,20 +225,20 @@ class NightWatchman:
             
             if warnings >= self.config.AUTO_MUTE_AFTER_WARNINGS:
                 # Mute the user
-                muted = self._mute_user(chat_id, user_id)
+                muted = await self._mute_user(chat_id, user_id)
                 if muted:
                     self.stats['users_muted'] += 1
                     logger.info(f"🔇 Muted user {user_name} ({warnings} warnings)")
                     
                     # Notify in group
-                    self._send_message(
+                    await self._send_message(
                         chat_id,
                         f"🔇 <b>{user_name}</b> has been muted for {self.config.MUTE_DURATION_HOURS}h due to spam."
                     )
             else:
                 # Send warning
                 remaining = self.config.AUTO_MUTE_AFTER_WARNINGS - warnings
-                self._send_message(
+                await self._send_message(
                     chat_id,
                     f"⚠️ <b>{user_name}</b>, your message was removed for spam. "
                     f"Warning {warnings}/{self.config.AUTO_MUTE_AFTER_WARNINGS}."
@@ -272,7 +273,7 @@ class NightWatchman:
 📊 Score: {result['spam_score']:.2f}
 🔧 Action: {result['action']}"""
         
-        self._send_message(self.admin_chat_id, report)
+        await self._send_message(self.admin_chat_id, report)
     
     async def _handle_private_message(self, chat_id: int, user_id: int, text: str):
         """Handle private messages (commands)"""
@@ -288,7 +289,7 @@ I am a spam detection bot that protects Telegram groups from:
 <b>Add me to your group as admin</b> and I'll start protecting it immediately.
 
 <i>Powered by Mudrex</i>"""
-            self._send_message(chat_id, welcome)
+            await self._send_message(chat_id, welcome)
             
         elif text.startswith('/stats'):
             uptime = datetime.now(timezone.utc) - self.stats['start_time']
@@ -303,14 +304,14 @@ I am a spam detection bot that protects Telegram groups from:
 🗑️ Messages deleted: {self.stats['messages_deleted']}
 ⚠️ Users warned: {self.stats['users_warned']}
 🔇 Users muted: {self.stats['users_muted']}"""
-            self._send_message(chat_id, stats_msg)
+            await self._send_message(chat_id, stats_msg)
     
     async def _is_admin(self, chat_id: int, user_id: int) -> bool:
         """Check if user is admin in chat"""
         try:
             url = f"https://api.telegram.org/bot{self.token}/getChatMember"
             params = {'chat_id': chat_id, 'user_id': user_id}
-            response = requests.get(url, params=params, timeout=10)
+            response = await self.client.get(url, params=params, timeout=10.0)
             data = response.json()
             
             if data.get('ok'):
@@ -320,18 +321,18 @@ I am a spam detection bot that protects Telegram groups from:
             logger.error(f"Error checking admin status: {e}")
         return False
     
-    def _delete_message(self, chat_id: int, message_id: int) -> bool:
+    async def _delete_message(self, chat_id: int, message_id: int) -> bool:
         """Delete a message"""
         try:
             url = f"https://api.telegram.org/bot{self.token}/deleteMessage"
             data = {'chat_id': chat_id, 'message_id': message_id}
-            response = requests.post(url, json=data, timeout=10)
+            response = await self.client.post(url, json=data, timeout=10.0)
             return response.json().get('ok', False)
         except Exception as e:
             logger.error(f"Error deleting message: {e}")
         return False
     
-    def _mute_user(self, chat_id: int, user_id: int) -> bool:
+    async def _mute_user(self, chat_id: int, user_id: int) -> bool:
         """Mute a user"""
         try:
             url = f"https://api.telegram.org/bot{self.token}/restrictChatMember"
@@ -349,13 +350,13 @@ I am a spam detection bot that protects Telegram groups from:
                 },
                 'until_date': until_date
             }
-            response = requests.post(url, json=data, timeout=10)
+            response = await self.client.post(url, json=data, timeout=10.0)
             return response.json().get('ok', False)
         except Exception as e:
             logger.error(f"Error muting user: {e}")
         return False
     
-    def _send_message(self, chat_id, text: str) -> bool:
+    async def _send_message(self, chat_id, text: str) -> bool:
         """Send a message"""
         try:
             url = f"https://api.telegram.org/bot{self.token}/sendMessage"
@@ -364,7 +365,7 @@ I am a spam detection bot that protects Telegram groups from:
                 'text': text,
                 'parse_mode': 'HTML'
             }
-            response = requests.post(url, json=data, timeout=10)
+            response = await self.client.post(url, json=data, timeout=10.0)
             return response.json().get('ok', False)
         except Exception as e:
             logger.error(f"Error sending message: {e}")
@@ -381,7 +382,10 @@ async def main():
     """)
     
     bot = NightWatchman()
-    await bot.start()
+    try:
+        await bot.start()
+    finally:
+        await bot.client.aclose()
 
 
 if __name__ == "__main__":

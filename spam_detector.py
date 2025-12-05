@@ -5,6 +5,7 @@ Analyzes messages for spam patterns
 
 import re
 import logging
+import hashlib
 from typing import Dict, List, Tuple, Optional
 from datetime import datetime, timezone, timedelta
 from config import Config
@@ -212,8 +213,8 @@ class SpamDetector:
     
     def _check_duplicate(self, message: str, user_id: int) -> float:
         """Check for duplicate messages (spam floods)"""
-        # Simple hash of message
-        msg_hash = hash(message.lower().strip())
+        # Use SHA256 hash for consistent message hashing
+        msg_hash = hashlib.sha256(message.lower().strip().encode()).hexdigest()
         
         if msg_hash not in self.recent_messages:
             self.recent_messages[msg_hash] = []
