@@ -56,6 +56,7 @@ python3 night_watchman.py
 |----------|-------------|
 | `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather |
 | `ADMIN_CHAT_ID` | Your chat ID for spam reports |
+| `ADMIN_USER_IDS` | Comma-separated list of admin user IDs for /analytics |
 
 ## Commands
 
@@ -73,6 +74,32 @@ python3 night_watchman.py
 | `/mute` | Mute a user for 24 hours |
 | `/unwarn` | Clear warnings for a user |
 | `/stats` | Show detailed bot statistics |
+
+### Analytics Commands (Admin Only - Private)
+| Command | Description |
+|---------|-------------|
+| `/analytics` | Today's group analytics |
+| `/analytics 7d` | Last 7 days summary |
+| `/analytics 14d` | Last 14 days summary |
+| `/analytics 30d` | Last 30 days summary |
+| `/analytics week` | Same as 7d |
+| `/analytics month` | Same as 30d |
+
+> **Note:** Analytics commands can be used in the group (command is deleted, results sent via DM) or in private chat with the bot.
+
+## Analytics Features
+
+📊 **What's tracked:**
+- 👥 Member joins/exits per day
+- 💬 Total messages per day
+- 🚫 Spam blocked per day
+- 🤬 Bad language detected
+- ⚠️ Warnings issued
+- 🔇 Users muted
+- 🔨 Users banned
+- 🚨 Raid alerts
+- 👤 Active users per day
+- ⏰ Peak activity hours
 
 ## Required Bot Permissions
 

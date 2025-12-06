@@ -115,6 +115,16 @@ class Config:
     # Admin Commands
     ADMIN_COMMANDS_ENABLED = True
     
+    # Admin User IDs (can access /analytics via DM)
+    # Add your Telegram user ID here
+    ADMIN_USER_IDS = [
+        int(x) for x in os.getenv("ADMIN_USER_IDS", "").split(",") if x.strip()
+    ] if os.getenv("ADMIN_USER_IDS") else [395803228]  # Default: @DecentralizedJM
+    
+    # Analytics Settings
+    ANALYTICS_ENABLED = True
+    ANALYTICS_RETENTION_DAYS = 90  # Keep data for 90 days
+    
     # Logging
     LOG_FILE = "logs/night_watchman.log"
     LOG_LEVEL = "INFO"

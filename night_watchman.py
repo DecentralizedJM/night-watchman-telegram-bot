@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 
 from config import Config
 from spam_detector import SpamDetector
+from analytics_tracker import AnalyticsTracker
 
 load_dotenv()
 
@@ -52,6 +53,7 @@ class NightWatchman:
         
         self.config = Config()
         self.detector = SpamDetector()
+        self.analytics = AnalyticsTracker()  # Analytics tracker
         
         # Track chat member join dates
         self.member_join_dates: Dict[str, datetime] = {}  # f"{chat_id}_{user_id}" -> datetime
@@ -191,11 +193,23 @@ class NightWatchman:
                     await self._handle_private_message(chat_id, user_id, text)
                 return
             
-            # Skip messages from admins
+            # Handle /analytics from admins in group (delete command, DM result)
+            if text.startswith('/analytics') and user_id in self.config.ADMIN_USER_IDS:
+                # Delete the command from group to keep it clean
+                await self._delete_message(chat_id, message_id)
+                # Send analytics via DM
+                await self._handle_analytics_command(user_id, user_id, text)
+                return
+            
+            # Skip messages from admins (don't moderate them)
             if await self._is_admin(chat_id, user_id):
                 return
             
             self.stats['messages_checked'] += 1
+            
+            # Track message in analytics
+            if self.config.ANALYTICS_ENABLED:
+                self.analytics.track_message(user_id, chat_id)
             
             # Get user join date for new user detection
             member_key = f"{chat_id}_{user_id}"
@@ -267,6 +281,10 @@ class NightWatchman:
                 join_time = datetime.now(timezone.utc)
                 self.member_join_dates[member_key] = join_time
                 
+                # Track join in analytics
+                if self.config.ANALYTICS_ENABLED:
+                    self.analytics.track_join(chat_id)
+                
                 # Track for anti-raid
                 if chat_id not in self.recent_joins:
                     self.recent_joins[chat_id] = []
@@ -293,6 +311,11 @@ class NightWatchman:
                 if self.config.SEND_WELCOME_MESSAGE:
                     await asyncio.sleep(1)  # Small delay
                     await self._send_welcome_message(chat_id, user)
+            
+            elif status in ['left', 'kicked']:
+                # User left or was kicked
+                if self.config.ANALYTICS_ENABLED:
+                    self.analytics.track_exit(chat_id)
                     
         except Exception as e:
             logger.error(f"Error tracking chat member: {e}")
@@ -301,6 +324,10 @@ class NightWatchman:
                           user_name: str, username: str, text: str, result: Dict):
         """Handle detected spam"""
         self.stats['spam_detected'] += 1
+        
+        # Track in analytics
+        if self.config.ANALYTICS_ENABLED:
+            self.analytics.track_spam_blocked(chat_id)
         
         logger.warning(f"🚨 SPAM detected from {user_name} (@{username}): {result['reasons']}")
         
@@ -392,7 +419,7 @@ I am a spam detection bot that protects Telegram groups from:
 <b>Add me to your group as admin</b> and I'll start protecting it immediately.
 
 <i>Powered by Mudrex</i>"""
-            await self._send_message(chat_id, welcome)
+            await self._send_message(chat_id, welcome, auto_delete=False)
             
         elif text.startswith('/stats'):
             uptime = datetime.now(timezone.utc) - self.stats['start_time']
@@ -407,7 +434,11 @@ I am a spam detection bot that protects Telegram groups from:
 🗑️ Messages deleted: {self.stats['messages_deleted']}
 ⚠️ Users warned: {self.stats['users_warned']}
 🔇 Users muted: {self.stats['users_muted']}"""
-            await self._send_message(chat_id, stats_msg)
+            await self._send_message(chat_id, stats_msg, auto_delete=False)
+        
+        elif text.startswith('/analytics'):
+            # Admin-only analytics command
+            await self._handle_analytics_command(chat_id, user_id, text)
     
     async def _is_admin(self, chat_id: int, user_id: int) -> bool:
         """Check if user is admin in chat"""
@@ -454,7 +485,13 @@ I am a spam detection bot that protects Telegram groups from:
                 'until_date': until_date
             }
             response = await self.client.post(url, json=data, timeout=10.0)
-            return response.json().get('ok', False)
+            result = response.json().get('ok', False)
+            
+            # Track in analytics
+            if result and self.config.ANALYTICS_ENABLED:
+                self.analytics.track_mute(chat_id)
+            
+            return result
         except Exception as e:
             logger.error(f"Error muting user: {e}")
         return False
@@ -463,6 +500,10 @@ I am a spam detection bot that protects Telegram groups from:
                                    user_name: str, username: str, text: str, result: Dict):
         """Handle bad language detection"""
         self.stats['bad_language_detected'] += 1
+        
+        # Track in analytics
+        if self.config.ANALYTICS_ENABLED:
+            self.analytics.track_bad_language(chat_id)
         
         action = self.config.BAD_LANGUAGE_ACTION
         bad_words = result['details'].get('bad_language', [])
@@ -598,6 +639,10 @@ I am a spam detection bot that protects Telegram groups from:
         """Handle detected raid"""
         logger.warning(f"🚨 RAID DETECTED in {chat_id}: {user_count} users joined")
         
+        # Track in analytics
+        if self.config.ANALYTICS_ENABLED:
+            self.analytics.track_raid_alert(chat_id)
+        
         if self.admin_chat_id:
             report = f"""🚨 <b>RAID DETECTED</b>
 
@@ -674,6 +719,75 @@ I am a spam detection bot that protects Telegram groups from:
 ⚠️ Suspicious users: {self.stats['suspicious_users_detected']}"""
             await self._send_message(chat_id, stats_msg)
     
+    async def _handle_analytics_command(self, chat_id: int, user_id: int, text: str):
+        """Handle /analytics command - admin only, sent via DM"""
+        # Check if user is an admin
+        if user_id not in self.config.ADMIN_USER_IDS:
+            await self._send_message(
+                chat_id, 
+                "⛔ This command is for admins only.",
+                auto_delete=False
+            )
+            return
+        
+        if not self.config.ANALYTICS_ENABLED:
+            await self._send_message(
+                chat_id,
+                "📊 Analytics is currently disabled.",
+                auto_delete=False
+            )
+            return
+        
+        # Parse timeframe from command
+        parts = text.split()
+        timeframe = parts[1] if len(parts) > 1 else 'today'
+        
+        try:
+            if timeframe == 'today':
+                stats = self.analytics.get_daily_stats()
+                report = self.analytics.format_report(stats)
+            elif timeframe in ['7d', 'week']:
+                stats = self.analytics.get_range_stats(days=7)
+                report = self.analytics.format_report(stats)
+                # Add peak hours
+                peak_hours = self.analytics.get_peak_hours(days=7)
+                if peak_hours:
+                    report += "\n\n⏰ <b>Peak Hours (UTC)</b>"
+                    for h in peak_hours[:3]:
+                        report += f"\n   {h['hour_str']}: {h['messages']} msgs"
+            elif timeframe in ['30d', 'month']:
+                stats = self.analytics.get_range_stats(days=30)
+                report = self.analytics.format_report(stats)
+            elif timeframe in ['14d', '2weeks']:
+                stats = self.analytics.get_range_stats(days=14)
+                report = self.analytics.format_report(stats)
+            else:
+                # Try parsing as number of days
+                try:
+                    days = int(timeframe.replace('d', ''))
+                    stats = self.analytics.get_range_stats(days=days)
+                    report = self.analytics.format_report(stats)
+                except ValueError:
+                    report = """📊 <b>Analytics Usage</b>
+
+<code>/analytics</code> - Today's stats
+<code>/analytics 7d</code> - Last 7 days
+<code>/analytics 14d</code> - Last 14 days  
+<code>/analytics 30d</code> - Last 30 days
+<code>/analytics week</code> - Last 7 days
+<code>/analytics month</code> - Last 30 days"""
+            
+            await self._send_message(chat_id, report, auto_delete=False)
+            logger.info(f"Analytics report sent to admin {user_id}")
+            
+        except Exception as e:
+            logger.error(f"Error generating analytics: {e}")
+            await self._send_message(
+                chat_id,
+                f"❌ Error generating analytics: {str(e)}",
+                auto_delete=False
+            )
+    
     async def _handle_non_indian_spam(self, chat_id: int, message_id: int, user_id: int,
                                       user_name: str, username: str, text: str, result: Dict):
         """Handle non-Indian language spam - immediate ban"""
@@ -722,7 +836,13 @@ I am a spam detection bot that protects Telegram groups from:
                 'until_date': 0  # Permanent ban
             }
             response = await self.client.post(url, json=data, timeout=10.0)
-            return response.json().get('ok', False)
+            result = response.json().get('ok', False)
+            
+            # Track in analytics
+            if result and self.config.ANALYTICS_ENABLED:
+                self.analytics.track_ban(chat_id)
+            
+            return result
         except Exception as e:
             logger.error(f"Error banning user: {e}")
         return False
