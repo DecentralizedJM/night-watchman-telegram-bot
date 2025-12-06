@@ -59,6 +59,12 @@ class NightWatchman:
         # Track recent joins for anti-raid
         self.recent_joins: Dict[int, List[datetime]] = {}  # chat_id -> [join_times]
         
+        # Track bot's own messages for auto-delete
+        self.bot_messages: Dict[str, Dict] = {}  # f"{chat_id}_{message_id}" -> message_data
+        
+        # Get bot's own user ID
+        self.bot_user_id = None
+        
         # Stats
         self.stats = {
             'messages_checked': 0,
@@ -88,7 +94,8 @@ class NightWatchman:
         # Get bot info
         bot_info = await self._get_bot_info()
         if bot_info:
-            logger.info(f"Bot: @{bot_info.get('username', 'unknown')}")
+            self.bot_user_id = bot_info.get('id')
+            logger.info(f"Bot: @{bot_info.get('username', 'unknown')} (ID: {self.bot_user_id})")
         
         # Start polling
         await self._poll_updates()
@@ -203,6 +210,19 @@ class NightWatchman:
             # Analyze message for spam and bad language
             result = self.detector.analyze(text, user_id, join_date)
             
+            # Handle non-Indian language spam with immediate ban
+            if result.get('immediate_ban') and result.get('non_indian_language'):
+                await self._handle_non_indian_spam(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    user_id=user_id,
+                    user_name=user_name,
+                    username=username,
+                    text=text,
+                    result=result
+                )
+                return  # Don't process further
+            
             # Handle bad language separately
             if result.get('bad_language') and self.config.BAD_LANGUAGE_ENABLED:
                 await self._handle_bad_language(
@@ -291,8 +311,8 @@ class NightWatchman:
                 self.stats['messages_deleted'] += 1
                 logger.info(f"🗑️ Deleted spam message from {user_name}")
         
-        # Warn the user
-        if self.config.AUTO_WARN_USER and result['action'] == 'delete_and_warn':
+        # Warn the user (for all spam detections, not just delete_and_warn)
+        if self.config.AUTO_WARN_USER and result['is_spam']:
             warnings = self.detector.add_warning(user_id)
             self.stats['users_warned'] += 1
             
@@ -455,8 +475,18 @@ I am a spam detection bot that protects Telegram groups from:
             if deleted:
                 self.stats['messages_deleted'] += 1
         
-        # Warn user if configured
-        if action in ['warn', 'delete_and_warn']:
+        # Handle different actions
+        if action == 'mute':
+            # Direct mute for bad language
+            muted = await self._mute_user(chat_id, user_id)
+            if muted:
+                self.stats['users_muted'] += 1
+                await self._send_message(
+                    chat_id,
+                    f"🔇 <b>{user_name}</b> has been muted for {self.config.MUTE_DURATION_HOURS}h for bad language."
+                )
+        elif action in ['warn', 'delete_and_warn']:
+            # Warn user and track warnings
             warnings = self.detector.add_warning(user_id)
             self.stats['users_warned'] += 1
             
@@ -466,13 +496,17 @@ I am a spam detection bot that protects Telegram groups from:
                 f"Warning {warnings}/{self.config.AUTO_MUTE_AFTER_WARNINGS}."
             )
             
-            # Check if should mute/ban
+            # Check if should mute/ban after warnings
             if warnings >= self.config.AUTO_BAN_AFTER_WARNINGS:
-                await self._ban_user(chat_id, user_id)
-                await self._send_message(chat_id, f"🔨 <b>{user_name}</b> has been banned for repeated violations.")
+                banned = await self._ban_user(chat_id, user_id)
+                if banned:
+                    self.stats['users_banned'] += 1
+                    await self._send_message(chat_id, f"🔨 <b>{user_name}</b> has been banned for repeated violations.")
             elif warnings >= self.config.AUTO_MUTE_AFTER_WARNINGS:
-                await self._mute_user(chat_id, user_id)
-                await self._send_message(chat_id, f"🔇 <b>{user_name}</b> has been muted for {self.config.MUTE_DURATION_HOURS}h.")
+                muted = await self._mute_user(chat_id, user_id)
+                if muted:
+                    self.stats['users_muted'] += 1
+                    await self._send_message(chat_id, f"🔇 <b>{user_name}</b> has been muted for {self.config.MUTE_DURATION_HOURS}h.")
         
         # Report to admin
         if self.admin_chat_id:
@@ -640,6 +674,44 @@ I am a spam detection bot that protects Telegram groups from:
 ⚠️ Suspicious users: {self.stats['suspicious_users_detected']}"""
             await self._send_message(chat_id, stats_msg)
     
+    async def _handle_non_indian_spam(self, chat_id: int, message_id: int, user_id: int,
+                                      user_name: str, username: str, text: str, result: Dict):
+        """Handle non-Indian language spam - immediate ban"""
+        detected_lang = result.get('detected_language', 'unknown')
+        
+        logger.warning(f"🚫 Non-Indian language spam from {user_name} (@{username}): {detected_lang}")
+        
+        # Delete the message immediately
+        deleted = await self._delete_message(chat_id, message_id)
+        if deleted:
+            self.stats['messages_deleted'] += 1
+        
+        # Ban immediately if configured
+        if self.config.AUTO_BAN_NON_INDIAN_SPAM:
+            banned = await self._ban_user(chat_id, user_id)
+            if banned:
+                self.stats['users_banned'] += 1
+                logger.info(f"🔨 Banned {user_name} for non-Indian language spam")
+                await self._send_message(
+                    chat_id,
+                    f"🔨 <b>{user_name}</b> has been banned for posting suspicious content in non-Indian language ({detected_lang})."
+                )
+        
+        # Report to admin
+        if self.admin_chat_id:
+            report = f"""🚫 <b>Non-Indian Language Spam</b>
+
+👤 User: {user_name} (@{username or 'N/A'})
+🆔 User ID: <code>{user_id}</code>
+💬 Chat: <code>{chat_id}</code>
+🌐 Language: {detected_lang}
+
+📝 <b>Message:</b>
+<code>{text[:300]}</code>
+
+🔨 <b>Action:</b> Banned immediately"""
+            await self._send_message(self.admin_chat_id, report)
+    
     async def _ban_user(self, chat_id: int, user_id: int) -> bool:
         """Ban a user"""
         try:
@@ -655,8 +727,8 @@ I am a spam detection bot that protects Telegram groups from:
             logger.error(f"Error banning user: {e}")
         return False
     
-    async def _send_message(self, chat_id, text: str) -> bool:
-        """Send a message"""
+    async def _send_message(self, chat_id, text: str, auto_delete: bool = None) -> bool:
+        """Send a message and optionally auto-delete after delay"""
         try:
             url = f"https://api.telegram.org/bot{self.token}/sendMessage"
             data = {
@@ -665,10 +737,38 @@ I am a spam detection bot that protects Telegram groups from:
                 'parse_mode': 'HTML'
             }
             response = await self.client.post(url, json=data, timeout=10.0)
-            return response.json().get('ok', False)
+            result = response.json()
+            
+            if result.get('ok'):
+                sent_message = result.get('result', {})
+                message_id = sent_message.get('message_id')
+                
+                # Auto-delete bot messages if enabled
+                if auto_delete is None:
+                    auto_delete = self.config.AUTO_DELETE_BOT_MESSAGES
+                
+                if auto_delete and message_id:
+                    # Schedule auto-delete
+                    asyncio.create_task(self._auto_delete_message(
+                        chat_id, 
+                        message_id, 
+                        self.config.BOT_MESSAGE_DELETE_DELAY_SECONDS
+                    ))
+                
+                return True
+            return False
         except Exception as e:
             logger.error(f"Error sending message: {e}")
         return False
+    
+    async def _auto_delete_message(self, chat_id: int, message_id: int, delay_seconds: int):
+        """Auto-delete a message after delay"""
+        try:
+            await asyncio.sleep(delay_seconds)
+            await self._delete_message(chat_id, message_id)
+            logger.debug(f"Auto-deleted bot message {message_id} in {chat_id}")
+        except Exception as e:
+            logger.error(f"Error auto-deleting message: {e}")
 
 
 async def main():

@@ -69,7 +69,7 @@ class Config:
         "crap", "piss", "hell", "dick", "cock", "pussy",
         # Add more as needed - keep it configurable
     ]
-    BAD_LANGUAGE_ACTION = "warn"  # "warn", "delete", "delete_and_warn", "mute"
+    BAD_LANGUAGE_ACTION = "delete_and_warn"  # "warn", "delete", "delete_and_warn", "mute"
     
     # New User Verification
     VERIFY_NEW_USERS = True
@@ -100,6 +100,17 @@ class Config:
 • No advertising without permission
 
 ⚠️ Violations will result in warnings, mutes, or bans."""
+    
+    # Non-Indian Language Detection
+    BLOCK_NON_INDIAN_LANGUAGES = True
+    NON_INDIAN_LANGUAGES = [
+        'chinese', 'korean', 'russian', 'japanese', 'arabic', 'thai', 'vietnamese'
+    ]
+    AUTO_BAN_NON_INDIAN_SPAM = True  # Auto-ban if non-Indian language + suspicious content
+    
+    # Bot Message Auto-Delete
+    AUTO_DELETE_BOT_MESSAGES = True
+    BOT_MESSAGE_DELETE_DELAY_SECONDS = 60  # Delete after 1 minute
     
     # Admin Commands
     ADMIN_COMMANDS_ENABLED = True

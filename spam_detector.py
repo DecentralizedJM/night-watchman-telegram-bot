@@ -130,6 +130,20 @@ class SpamDetector:
                 result['details']['bad_language'] = bad_words
                 result['bad_language'] = True
         
+        # 9. Non-Indian language detection (Chinese, Korean, Russian, etc.)
+        if self.config.BLOCK_NON_INDIAN_LANGUAGES:
+            non_indian_lang, detected_lang = self._check_non_indian_language(message)
+            if non_indian_lang:
+                result['non_indian_language'] = True
+                result['detected_language'] = detected_lang
+                result['reasons'].append(f"Non-Indian language detected: {detected_lang}")
+                # If contains URLs/links, mark as immediate ban
+                if self.url_pattern.search(message):
+                    result['immediate_ban'] = True
+                    result['spam_score'] = 1.0  # Maximum score for immediate action
+                    result['is_spam'] = True
+                    result['action'] = 'delete_and_ban'
+        
         # Determine if spam based on score
         if result['spam_score'] >= 0.7:
             result['is_spam'] = True
@@ -284,6 +298,52 @@ class SpamDetector:
         """Clear warnings for user"""
         if user_id in self.user_warnings:
             del self.user_warnings[user_id]
+    
+    def _check_non_indian_language(self, message: str) -> Tuple[bool, str]:
+        """Check if message contains non-Indian languages (Chinese, Korean, Russian, etc.)"""
+        if not self.config.BLOCK_NON_INDIAN_LANGUAGES:
+            return False, ""
+        
+        # Unicode ranges for different languages
+        language_ranges = {
+            'chinese': [
+                (0x4E00, 0x9FFF),  # CJK Unified Ideographs
+                (0x3400, 0x4DBF),  # CJK Extension A
+                (0x20000, 0x2A6DF),  # CJK Extension B
+            ],
+            'korean': [
+                (0xAC00, 0xD7A3),  # Hangul Syllables
+                (0x1100, 0x11FF),  # Hangul Jamo
+            ],
+            'russian': [
+                (0x0400, 0x04FF),  # Cyrillic
+            ],
+            'japanese': [
+                (0x3040, 0x309F),  # Hiragana
+                (0x30A0, 0x30FF),  # Katakana
+            ],
+            'arabic': [
+                (0x0600, 0x06FF),  # Arabic
+            ],
+            'thai': [
+                (0x0E00, 0x0E7F),  # Thai
+            ],
+            'vietnamese': [
+                (0x1EA0, 0x1EFF),  # Vietnamese Extended
+            ],
+        }
+        
+        detected_languages = []
+        for lang, ranges in language_ranges.items():
+            for start, end in ranges:
+                if any(start <= ord(char) <= end for char in message):
+                    detected_languages.append(lang)
+                    break
+        
+        if detected_languages:
+            return True, ', '.join(detected_languages)
+        
+        return False, ""
     
     def _check_bad_language(self, message: str) -> Tuple[float, List[str]]:
         """Check for bad language/profanity"""
