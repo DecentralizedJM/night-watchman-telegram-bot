@@ -58,7 +58,51 @@ class Config:
     AUTO_DELETE_SPAM = True
     AUTO_WARN_USER = True
     AUTO_MUTE_AFTER_WARNINGS = 3
+    AUTO_BAN_AFTER_WARNINGS = 5  # Ban after X warnings
     MUTE_DURATION_HOURS = 24
+    
+    # Bad Language Detection
+    BAD_LANGUAGE_ENABLED = True
+    BAD_LANGUAGE_WORDS = [
+        # Profanity (common words - add more as needed)
+        "fuck", "shit", "damn", "bitch", "asshole", "bastard",
+        "crap", "piss", "hell", "dick", "cock", "pussy",
+        # Add more as needed - keep it configurable
+    ]
+    BAD_LANGUAGE_ACTION = "warn"  # "warn", "delete", "delete_and_warn", "mute"
+    
+    # New User Verification
+    VERIFY_NEW_USERS = True
+    MIN_ACCOUNT_AGE_DAYS = 7  # Require account to be at least 7 days old
+    SUSPICIOUS_USERNAME_PATTERNS = [
+        r'^[0-9]+$',  # Only numbers
+        r'^user[0-9]+$',  # user12345 pattern
+        r'^telegram[0-9]+$',  # telegram123 pattern
+        r'.*spam.*',  # Contains "spam"
+        r'.*scam.*',  # Contains "scam"
+    ]
+    AUTO_BAN_SUSPICIOUS_JOINS = False  # Auto-ban or just restrict
+    RESTRICT_NEW_USERS_HOURS = 24  # Restrict new users for X hours
+    
+    # Anti-Raid Protection
+    ANTI_RAID_ENABLED = True
+    RAID_DETECTION_WINDOW_MINUTES = 5  # Check last 5 minutes
+    RAID_THRESHOLD_USERS = 10  # If 10+ new users join in window, it's a raid
+    
+    # Welcome Message
+    SEND_WELCOME_MESSAGE = True
+    WELCOME_MESSAGE = """👋 Welcome to the group!
+
+📋 <b>Rules:</b>
+• No spam or scams
+• No bad language
+• Be respectful
+• No advertising without permission
+
+⚠️ Violations will result in warnings, mutes, or bans."""
+    
+    # Admin Commands
+    ADMIN_COMMANDS_ENABLED = True
     
     # Logging
     LOG_FILE = "logs/night_watchman.log"

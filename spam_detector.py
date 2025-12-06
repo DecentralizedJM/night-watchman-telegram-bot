@@ -121,6 +121,15 @@ class SpamDetector:
             result['spam_score'] += crypto_score
             result['reasons'].append("Contains crypto addresses")
         
+        # 8. Bad language detection
+        if self.config.BAD_LANGUAGE_ENABLED:
+            bad_lang_score, bad_words = self._check_bad_language(message_lower)
+            if bad_lang_score > 0:
+                result['spam_score'] += bad_lang_score
+                result['reasons'].append(f"Bad language detected: {', '.join(bad_words[:3])}")
+                result['details']['bad_language'] = bad_words
+                result['bad_language'] = True
+        
         # Determine if spam based on score
         if result['spam_score'] >= 0.7:
             result['is_spam'] = True
@@ -275,3 +284,26 @@ class SpamDetector:
         """Clear warnings for user"""
         if user_id in self.user_warnings:
             del self.user_warnings[user_id]
+    
+    def _check_bad_language(self, message: str) -> Tuple[float, List[str]]:
+        """Check for bad language/profanity"""
+        if not self.config.BAD_LANGUAGE_ENABLED:
+            return 0.0, []
+        
+        found_words = []
+        message_lower = message.lower()
+        
+        for word in self.config.BAD_LANGUAGE_WORDS:
+            # Check for whole word matches (with word boundaries)
+            pattern = r'\b' + re.escape(word.lower()) + r'\b'
+            if re.search(pattern, message_lower):
+                found_words.append(word)
+        
+        if len(found_words) >= 3:
+            return 0.6, found_words
+        elif len(found_words) >= 2:
+            return 0.4, found_words
+        elif len(found_words) >= 1:
+            return 0.3, found_words
+        
+        return 0.0, []

@@ -8,7 +8,7 @@ import logging
 import os
 import sys
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 import httpx
 from dotenv import load_dotenv
 
@@ -56,6 +56,9 @@ class NightWatchman:
         # Track chat member join dates
         self.member_join_dates: Dict[str, datetime] = {}  # f"{chat_id}_{user_id}" -> datetime
         
+        # Track recent joins for anti-raid
+        self.recent_joins: Dict[int, List[datetime]] = {}  # chat_id -> [join_times]
+        
         # Stats
         self.stats = {
             'messages_checked': 0,
@@ -63,6 +66,9 @@ class NightWatchman:
             'messages_deleted': 0,
             'users_warned': 0,
             'users_muted': 0,
+            'users_banned': 0,
+            'bad_language_detected': 0,
+            'suspicious_users_detected': 0,
             'start_time': datetime.now(timezone.utc)
         }
         
@@ -142,6 +148,22 @@ class NightWatchman:
             if not message:
                 return
             
+            # Handle new_chat_members (when multiple users join)
+            new_members = message.get('new_chat_members', [])
+            if new_members:
+                chat_id = message.get('chat', {}).get('id')
+                for member in new_members:
+                    # Create a fake chat_member update for each member
+                    fake_update = {
+                        'chat': {'id': chat_id},
+                        'new_chat_member': {
+                            'user': member,
+                            'status': 'member'
+                        }
+                    }
+                    await self._handle_chat_member(fake_update)
+                return
+            
             # Extract message info
             chat = message.get('chat', {})
             chat_id = chat.get('id')
@@ -172,8 +194,26 @@ class NightWatchman:
             member_key = f"{chat_id}_{user_id}"
             join_date = self.member_join_dates.get(member_key)
             
-            # Analyze message for spam
+            # Check for admin commands first
+            if self.config.ADMIN_COMMANDS_ENABLED and text.startswith('/'):
+                if await self._is_admin(chat_id, user_id):
+                    await self._handle_admin_command(chat_id, user_id, text, message)
+                    return
+            
+            # Analyze message for spam and bad language
             result = self.detector.analyze(text, user_id, join_date)
+            
+            # Handle bad language separately
+            if result.get('bad_language') and self.config.BAD_LANGUAGE_ENABLED:
+                await self._handle_bad_language(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    user_id=user_id,
+                    user_name=user_name,
+                    username=username,
+                    text=text,
+                    result=result
+                )
             
             if result['is_spam']:
                 await self._handle_spam(
@@ -193,17 +233,47 @@ class NightWatchman:
             logger.error(f"Error handling update: {e}", exc_info=True)
     
     async def _handle_chat_member(self, chat_member: Dict):
-        """Track when users join"""
+        """Track when users join and verify suspicious accounts"""
         try:
             chat_id = chat_member.get('chat', {}).get('id')
-            user_id = chat_member.get('new_chat_member', {}).get('user', {}).get('id')
-            status = chat_member.get('new_chat_member', {}).get('status')
+            new_member = chat_member.get('new_chat_member', {})
+            user = new_member.get('user', {})
+            user_id = user.get('id')
+            status = new_member.get('status')
             
             if status == 'member':
                 # User just joined
                 member_key = f"{chat_id}_{user_id}"
-                self.member_join_dates[member_key] = datetime.now(timezone.utc)
-                logger.debug(f"Tracking new member: {user_id} in {chat_id}")
+                join_time = datetime.now(timezone.utc)
+                self.member_join_dates[member_key] = join_time
+                
+                # Track for anti-raid
+                if chat_id not in self.recent_joins:
+                    self.recent_joins[chat_id] = []
+                self.recent_joins[chat_id].append(join_time)
+                
+                # Clean old joins
+                window = timedelta(minutes=self.config.RAID_DETECTION_WINDOW_MINUTES)
+                self.recent_joins[chat_id] = [
+                    t for t in self.recent_joins[chat_id] 
+                    if (join_time - t) < window
+                ]
+                
+                # Check for raid
+                if self.config.ANTI_RAID_ENABLED:
+                    if len(self.recent_joins[chat_id]) >= self.config.RAID_THRESHOLD_USERS:
+                        logger.warning(f"🚨 Possible raid detected in {chat_id}: {len(self.recent_joins[chat_id])} users joined")
+                        await self._handle_raid(chat_id, len(self.recent_joins[chat_id]))
+                
+                # Verify new user
+                if self.config.VERIFY_NEW_USERS:
+                    await self._verify_new_user(chat_id, user, join_time)
+                
+                # Send welcome message
+                if self.config.SEND_WELCOME_MESSAGE:
+                    await asyncio.sleep(1)  # Small delay
+                    await self._send_welcome_message(chat_id, user)
+                    
         except Exception as e:
             logger.error(f"Error tracking chat member: {e}")
     
@@ -226,7 +296,17 @@ class NightWatchman:
             warnings = self.detector.add_warning(user_id)
             self.stats['users_warned'] += 1
             
-            if warnings >= self.config.AUTO_MUTE_AFTER_WARNINGS:
+            if warnings >= self.config.AUTO_BAN_AFTER_WARNINGS:
+                # Ban the user
+                banned = await self._ban_user(chat_id, user_id)
+                if banned:
+                    self.stats['users_banned'] += 1
+                    logger.info(f"🔨 Banned user {user_name} ({warnings} warnings)")
+                    await self._send_message(
+                        chat_id,
+                        f"🔨 <b>{user_name}</b> has been banned due to repeated spam violations."
+                    )
+            elif warnings >= self.config.AUTO_MUTE_AFTER_WARNINGS:
                 # Mute the user
                 muted = await self._mute_user(chat_id, user_id)
                 if muted:
@@ -357,6 +437,222 @@ I am a spam detection bot that protects Telegram groups from:
             return response.json().get('ok', False)
         except Exception as e:
             logger.error(f"Error muting user: {e}")
+        return False
+    
+    async def _handle_bad_language(self, chat_id: int, message_id: int, user_id: int,
+                                   user_name: str, username: str, text: str, result: Dict):
+        """Handle bad language detection"""
+        self.stats['bad_language_detected'] += 1
+        
+        action = self.config.BAD_LANGUAGE_ACTION
+        bad_words = result['details'].get('bad_language', [])
+        
+        logger.warning(f"💬 Bad language from {user_name} (@{username}): {', '.join(bad_words[:3])}")
+        
+        # Delete message if configured
+        if action in ['delete', 'delete_and_warn']:
+            deleted = await self._delete_message(chat_id, message_id)
+            if deleted:
+                self.stats['messages_deleted'] += 1
+        
+        # Warn user if configured
+        if action in ['warn', 'delete_and_warn']:
+            warnings = self.detector.add_warning(user_id)
+            self.stats['users_warned'] += 1
+            
+            await self._send_message(
+                chat_id,
+                f"⚠️ <b>{user_name}</b>, please keep the language clean. "
+                f"Warning {warnings}/{self.config.AUTO_MUTE_AFTER_WARNINGS}."
+            )
+            
+            # Check if should mute/ban
+            if warnings >= self.config.AUTO_BAN_AFTER_WARNINGS:
+                await self._ban_user(chat_id, user_id)
+                await self._send_message(chat_id, f"🔨 <b>{user_name}</b> has been banned for repeated violations.")
+            elif warnings >= self.config.AUTO_MUTE_AFTER_WARNINGS:
+                await self._mute_user(chat_id, user_id)
+                await self._send_message(chat_id, f"🔇 <b>{user_name}</b> has been muted for {self.config.MUTE_DURATION_HOURS}h.")
+        
+        # Report to admin
+        if self.admin_chat_id:
+            report = f"""💬 <b>Bad Language Detected</b>
+
+👤 User: {user_name} (@{username or 'N/A'})
+🆔 User ID: <code>{user_id}</code>
+💬 Chat: <code>{chat_id}</code>
+
+📝 <b>Message:</b>
+<code>{text[:300]}</code>
+
+🚫 <b>Words:</b> {', '.join(bad_words[:5])}"""
+            await self._send_message(self.admin_chat_id, report)
+    
+    async def _verify_new_user(self, chat_id: int, user: Dict, join_time: datetime):
+        """Verify new user for suspicious patterns"""
+        user_id = user.get('id')
+        username = user.get('username', '')
+        first_name = user.get('first_name', '')
+        
+        suspicious_reasons = []
+        
+        # Check account age (if available from Telegram API)
+        # Note: Telegram API doesn't provide account creation date directly
+        # We can check other indicators
+        
+        # Check username patterns
+        if username:
+            import re
+            for pattern in self.config.SUSPICIOUS_USERNAME_PATTERNS:
+                if re.match(pattern, username, re.IGNORECASE):
+                    suspicious_reasons.append(f"Suspicious username pattern: {username}")
+                    break
+        
+        # Check if username is missing (often spam accounts)
+        if not username and not first_name:
+            suspicious_reasons.append("No username or name")
+        
+        if suspicious_reasons:
+            self.stats['suspicious_users_detected'] += 1
+            logger.warning(f"⚠️ Suspicious user detected: {user_id} - {', '.join(suspicious_reasons)}")
+            
+            if self.config.AUTO_BAN_SUSPICIOUS_JOINS:
+                await self._ban_user(chat_id, user_id)
+                await self._send_message(
+                    chat_id,
+                    f"🔨 Suspicious account detected and banned."
+                )
+            else:
+                # Restrict new user
+                await self._restrict_new_user(chat_id, user_id)
+                if self.admin_chat_id:
+                    report = f"""⚠️ <b>Suspicious User Joined</b>
+
+👤 User: {first_name} (@{username or 'N/A'})
+🆔 User ID: <code>{user_id}</code>
+💬 Chat: <code>{chat_id}</code>
+
+⚠️ <b>Reasons:</b>
+{chr(10).join('• ' + r for r in suspicious_reasons)}"""
+                    await self._send_message(self.admin_chat_id, report)
+    
+    async def _restrict_new_user(self, chat_id: int, user_id: int):
+        """Restrict new user (no links, media for X hours)"""
+        try:
+            url = f"https://api.telegram.org/bot{self.token}/restrictChatMember"
+            until_date = int((datetime.now(timezone.utc) + 
+                            timedelta(hours=self.config.RESTRICT_NEW_USERS_HOURS)).timestamp())
+            
+            data = {
+                'chat_id': chat_id,
+                'user_id': user_id,
+                'permissions': {
+                    'can_send_messages': True,
+                    'can_send_media_messages': False,
+                    'can_send_other_messages': False,
+                    'can_add_web_page_previews': False
+                },
+                'until_date': until_date
+            }
+            response = await self.client.post(url, json=data, timeout=10.0)
+            return response.json().get('ok', False)
+        except Exception as e:
+            logger.error(f"Error restricting user: {e}")
+        return False
+    
+    async def _handle_raid(self, chat_id: int, user_count: int):
+        """Handle detected raid"""
+        logger.warning(f"🚨 RAID DETECTED in {chat_id}: {user_count} users joined")
+        
+        if self.admin_chat_id:
+            report = f"""🚨 <b>RAID DETECTED</b>
+
+💬 Chat: <code>{chat_id}</code>
+👥 Users joined: <b>{user_count}</b>
+⏰ Time window: {self.config.RAID_DETECTION_WINDOW_MINUTES} minutes
+
+⚠️ Multiple users joined in a short time. This might be a coordinated attack."""
+            await self._send_message(self.admin_chat_id, report)
+    
+    async def _send_welcome_message(self, chat_id: int, user: Dict):
+        """Send welcome message to new member"""
+        # Welcome message is sent to the group, not personalized
+        await self._send_message(chat_id, self.config.WELCOME_MESSAGE)
+    
+    async def _handle_admin_command(self, chat_id: int, user_id: int, text: str, message: Dict):
+        """Handle admin commands"""
+        parts = text.split()
+        command = parts[0].lower()
+        
+        # Reply to message commands
+        reply_to = message.get('reply_to_message')
+        target_user_id = None
+        if reply_to:
+            target_user_id = reply_to.get('from', {}).get('id')
+        
+        if command == '/warn' and target_user_id:
+            warnings = self.detector.add_warning(target_user_id)
+            self.stats['users_warned'] += 1
+            target_name = reply_to.get('from', {}).get('first_name', 'User')
+            await self._send_message(
+                chat_id,
+                f"⚠️ <b>{target_name}</b> has been warned. "
+                f"Warnings: {warnings}/{self.config.AUTO_MUTE_AFTER_WARNINGS}"
+            )
+            
+        elif command == '/ban' and target_user_id:
+            banned = await self._ban_user(chat_id, target_user_id)
+            if banned:
+                target_name = reply_to.get('from', {}).get('first_name', 'User')
+                await self._send_message(chat_id, f"🔨 <b>{target_name}</b> has been banned.")
+                self.stats['users_banned'] += 1
+                
+        elif command == '/mute' and target_user_id:
+            muted = await self._mute_user(chat_id, target_user_id)
+            if muted:
+                target_name = reply_to.get('from', {}).get('first_name', 'User')
+                await self._send_message(
+                    chat_id,
+                    f"🔇 <b>{target_name}</b> has been muted for {self.config.MUTE_DURATION_HOURS}h."
+                )
+                self.stats['users_muted'] += 1
+                
+        elif command == '/unwarn' and target_user_id:
+            self.detector.clear_warnings(target_user_id)
+            target_name = reply_to.get('from', {}).get('first_name', 'User')
+            await self._send_message(chat_id, f"✅ Warnings cleared for <b>{target_name}</b>.")
+            
+        elif command == '/stats':
+            uptime = datetime.now(timezone.utc) - self.stats['start_time']
+            hours = int(uptime.total_seconds() // 3600)
+            minutes = int((uptime.total_seconds() % 3600) // 60)
+            
+            stats_msg = f"""📊 <b>Night Watchman Stats</b>
+
+⏱️ Uptime: {hours}h {minutes}m
+📨 Messages checked: {self.stats['messages_checked']}
+🚨 Spam detected: {self.stats['spam_detected']}
+💬 Bad language: {self.stats['bad_language_detected']}
+🗑️ Messages deleted: {self.stats['messages_deleted']}
+⚠️ Users warned: {self.stats['users_warned']}
+🔇 Users muted: {self.stats['users_muted']}
+🔨 Users banned: {self.stats['users_banned']}
+⚠️ Suspicious users: {self.stats['suspicious_users_detected']}"""
+            await self._send_message(chat_id, stats_msg)
+    
+    async def _ban_user(self, chat_id: int, user_id: int) -> bool:
+        """Ban a user"""
+        try:
+            url = f"https://api.telegram.org/bot{self.token}/banChatMember"
+            data = {
+                'chat_id': chat_id,
+                'user_id': user_id,
+                'until_date': 0  # Permanent ban
+            }
+            response = await self.client.post(url, json=data, timeout=10.0)
+            return response.json().get('ok', False)
+        except Exception as e:
+            logger.error(f"Error banning user: {e}")
         return False
     
     async def _send_message(self, chat_id, text: str) -> bool:
