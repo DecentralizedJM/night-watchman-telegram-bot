@@ -1,0 +1,412 @@
+# 🌙 Night Watchman Bot - Full Specification
+
+## Overview
+24/7 Telegram watchdog & moderation bot that automatically protects groups from spam, scams, bad language, and malicious users.
+
+---
+
+## 🛡️ Core Protection Features
+
+### 1. Spam Detection (Multi-Signal Analysis)
+- **Keyword Detection**: Detects scam phrases and spam patterns
+  - Crypto scams: "dm me for gains", "100x", "guaranteed profit", "free airdrop"
+  - Common spam: "click here", "join now", "hurry up", "make money fast"
+  - Suspicious phrases: "send me", "invest with me", "trading signals"
+  
+- **URL Analysis**: 
+  - Blocks suspicious domains (URL shorteners: bit.ly, tinyurl, t.co)
+  - Whitelists trusted domains (mudrex.com, binance.com, github.com, etc.)
+  - Detects external Telegram links (t.me, telegram.me)
+  
+- **Crypto Address Detection**: Flags wallet addresses (ETH, BTC, SOL)
+- **Duplicate Message Detection**: Catches repeated spam messages
+- **Formatting Abuse**: Detects excessive CAPS, repeated characters, too many emojis
+- **Rate Limiting**: Flags users sending >10 messages per minute
+
+**Spam Scoring System:**
+- Score ≥ 0.7 → Delete + Warn user
+- Score ≥ 0.5 → Delete only
+- Score ≥ 0.3 → Flag for review
+- Score < 0.3 → Allow
+
+### 2. Bad Language Detection
+- **Profanity Filter**: Detects inappropriate words
+- **Configurable Actions**:
+  - `warn` - Warn user only
+  - `delete` - Delete message only
+  - `delete_and_warn` - Delete + Warn (default)
+  - `mute` - Direct mute
+- **Auto-escalation**: After warnings, mutes/bans apply
+
+### 3. Non-Indian Language Detection & Auto-Ban
+- **Detects Languages**: Chinese, Korean, Russian, Japanese, Arabic, Thai, Vietnamese
+- **Immediate Ban**: Users posting suspicious links in non-Indian languages are banned instantly
+- **Message Deletion**: Messages deleted before ban
+- **Admin Notification**: Reports sent to admin chat
+
+### 4. Scammer Detection on Join
+- **Suspicious Username Patterns**:
+  - Only numbers (12345)
+  - Generic patterns (user123, telegram123)
+  - Contains "spam" or "scam"
+- **Missing Profile Info**: Flags accounts with no username/name
+- **Auto-Actions**: Can auto-ban or restrict suspicious accounts
+- **New User Restrictions**: Blocks links/media for first 24 hours
+
+### 5. Anti-Raid Protection
+- **Raid Detection**: Detects when 10+ users join within 5 minutes
+- **Admin Alerts**: Notifies admins of potential coordinated attacks
+- **Configurable Thresholds**: Adjustable window and user count
+
+### 6. Flood Detection
+- **Message Rate Limiting**: Flags users sending too many messages
+- **Duplicate Detection**: Catches spam floods with same message
+- **Automatic Action**: Warns/mutes based on severity
+
+---
+
+## ⚙️ Automatic Moderation Actions
+
+### Warning System
+1. **1st Violation** → Warning + Message deleted
+2. **2nd Violation** → Warning + Message deleted
+3. **3rd Warning** → Auto-mute for 24 hours
+4. **5th Warning** → Auto-ban permanently
+
+### Message Actions
+- **Auto-delete spam**: Enabled by default
+- **Auto-delete bad language**: Configurable
+- **Auto-warn users**: Enabled by default
+- **Bot message auto-delete**: All bot messages deleted after 60 seconds
+
+### User Actions
+- **Mute**: Restricts user from sending messages for 24 hours
+- **Ban**: Permanent ban from group
+- **Restrict**: New users restricted (no links/media) for 24 hours
+
+---
+
+## 👥 User Management
+
+### New User Protection
+- **Link Blocking**: New users (<24h) cannot post links
+- **Media Restrictions**: New users restricted from posting media
+- **Verification**: Checks for suspicious account patterns
+- **Welcome Messages**: Automatic greeting with group rules
+
+### User Tracking
+- **Join Date Tracking**: Tracks when users joined
+- **Warning History**: Maintains warning count per user
+- **Activity Tracking**: Monitors user message patterns
+
+---
+
+## 🔧 Admin Commands
+
+### In-Group Commands (Reply to User)
+| Command | Description | Usage |
+|---------|-------------|-------|
+| `/warn` | Warn a user | Reply to their message with `/warn` |
+| `/ban` | Ban user permanently | Reply with `/ban` |
+| `/mute` | Mute user for 24h | Reply with `/mute` |
+| `/unwarn` | Clear user warnings | Reply with `/unwarn` |
+| `/stats` | Show bot statistics | Use `/stats` in group |
+
+### Private Chat Commands
+| Command | Description |
+|---------|-------------|
+| `/start` | Welcome message |
+| `/stats` | Bot statistics |
+| `/analytics` | Today's analytics (admin only) |
+| `/analytics 7d` | Last 7 days (admin only) |
+| `/analytics 14d` | Last 14 days (admin only) |
+| `/analytics 30d` | Last 30 days (admin only) |
+| `/analytics week` | Same as 7d (admin only) |
+| `/analytics month` | Same as 30d (admin only) |
+
+**Note**: Analytics commands can be used in group (command auto-deleted, results sent via DM) or in private chat.
+
+---
+
+## 📊 Analytics & Reporting
+
+### Tracked Metrics
+- **Member Activity**:
+  - Joins per day
+  - Exits per day
+  - Active users per day
+  
+- **Message Activity**:
+  - Total messages per day
+  - Messages per hour (peak hours analysis)
+  
+- **Moderation Activity**:
+  - Spam blocked per day
+  - Bad language detected
+  - Warnings issued
+  - Users muted
+  - Users banned
+  - Raid alerts
+  
+- **Time Analysis**:
+  - Peak activity hours (UTC)
+  - Daily trends
+  - Weekly/monthly summaries
+
+### Data Storage
+- **File**: `data/analytics.json`
+- **Retention**: 90 days (configurable)
+- **Format**: JSON with daily and hourly breakdowns
+
+### Analytics Features
+- **Timeframe Options**: today, 7d, 14d, 30d, week, month
+- **Peak Hours**: Shows top 3 busiest hours for weekly reports
+- **Private Delivery**: Results sent via DM (command deleted from group)
+- **Admin Only**: Restricted to users in `ADMIN_USER_IDS`
+
+---
+
+## 🔔 Admin Notifications
+
+### Spam Reports
+Sent to `ADMIN_CHAT_ID` when spam is detected:
+- User information (name, username, ID)
+- Chat ID
+- Message content (truncated)
+- Detection reasons
+- Spam score
+- Action taken
+
+### Bad Language Reports
+- User details
+- Detected words
+- Message content
+- Action taken
+
+### Non-Indian Language Spam
+- User details
+- Detected language
+- Message content
+- Immediate ban notification
+
+### Raid Alerts
+- Chat ID
+- Number of users joined
+- Time window
+- Alert level
+
+### Suspicious User Alerts
+- User details
+- Suspicious patterns detected
+- Action taken (ban/restrict)
+
+---
+
+## ⚙️ Configuration Options
+
+### Spam Detection
+```python
+SPAM_KEYWORDS = [...]  # Customizable spam keywords
+SUSPICIOUS_DOMAINS = [...]  # Blocked domains
+WHITELISTED_DOMAINS = [...]  # Always allowed
+MAX_MESSAGES_PER_MINUTE = 10
+DUPLICATE_MESSAGE_THRESHOLD = 3
+```
+
+### Bad Language
+```python
+BAD_LANGUAGE_ENABLED = True
+BAD_LANGUAGE_WORDS = [...]  # Customizable word list
+BAD_LANGUAGE_ACTION = "delete_and_warn"  # warn/delete/delete_and_warn/mute
+```
+
+### New User Protection
+```python
+VERIFY_NEW_USERS = True
+NEW_USER_LINK_BLOCK_HOURS = 24
+RESTRICT_NEW_USERS_HOURS = 24
+AUTO_BAN_SUSPICIOUS_JOINS = False
+SUSPICIOUS_USERNAME_PATTERNS = [...]
+```
+
+### Anti-Raid
+```python
+ANTI_RAID_ENABLED = True
+RAID_DETECTION_WINDOW_MINUTES = 5
+RAID_THRESHOLD_USERS = 10
+```
+
+### Non-Indian Language
+```python
+BLOCK_NON_INDIAN_LANGUAGES = True
+AUTO_BAN_NON_INDIAN_SPAM = True
+NON_INDIAN_LANGUAGES = ['chinese', 'korean', 'russian', ...]
+```
+
+### Auto-Moderation
+```python
+AUTO_DELETE_SPAM = True
+AUTO_WARN_USER = True
+AUTO_MUTE_AFTER_WARNINGS = 3
+AUTO_BAN_AFTER_WARNINGS = 5
+MUTE_DURATION_HOURS = 24
+```
+
+### Bot Messages
+```python
+AUTO_DELETE_BOT_MESSAGES = True
+BOT_MESSAGE_DELETE_DELAY_SECONDS = 60
+```
+
+### Analytics
+```python
+ANALYTICS_ENABLED = True
+ANALYTICS_RETENTION_DAYS = 90
+ADMIN_USER_IDS = [...]  # List of admin user IDs
+```
+
+### Welcome Messages
+```python
+SEND_WELCOME_MESSAGE = True
+WELCOME_MESSAGE = "..."  # Customizable
+```
+
+---
+
+## 🔐 Security & Permissions
+
+### Required Bot Permissions
+- **Delete Messages**: Required for spam/bad language removal
+- **Restrict Members**: Required for muting users
+- **Ban Members**: Required for permanent bans
+
+### Admin Access
+- **ADMIN_CHAT_ID**: Receives spam reports and alerts
+- **ADMIN_USER_IDS**: Can access `/analytics` command
+- **Group Admins**: Can use moderation commands (`/warn`, `/ban`, `/mute`)
+
+---
+
+## 📁 File Structure
+
+```
+night-watchman-telegram-bot/
+├── night_watchman.py      # Main bot file
+├── spam_detector.py       # Spam detection engine
+├── analytics_tracker.py   # Analytics tracking system
+├── config.py             # Configuration settings
+├── requirements.txt       # Python dependencies
+├── README.md             # User documentation
+├── data/
+│   └── analytics.json    # Analytics data (auto-created)
+└── logs/
+    └── night_watchman.log # Bot logs (auto-created)
+```
+
+---
+
+## 🚀 Technical Details
+
+### Technology Stack
+- **Language**: Python 3
+- **HTTP Client**: httpx (async)
+- **Data Storage**: JSON files
+- **Logging**: Python logging module
+
+### Performance
+- **Async/Await**: Non-blocking operations
+- **Connection Limits**: Max 10 connections, 5 keepalive
+- **Timeout**: 35 seconds for polling, 10 seconds for API calls
+
+### Data Persistence
+- **Analytics**: Stored in `data/analytics.json`
+- **In-Memory**: User warnings, join dates, message history
+- **Retention**: 90 days for analytics data
+
+---
+
+## 📈 Statistics Tracked
+
+### Real-time Stats
+- Messages checked
+- Spam detected
+- Messages deleted
+- Users warned
+- Users muted
+- Users banned
+- Bad language detected
+- Suspicious users detected
+- Bot uptime
+
+### Historical Analytics
+- Daily joins/exits
+- Daily messages
+- Daily spam blocked
+- Daily warnings/mutes/bans
+- Active users per day
+- Peak activity hours
+- Raid alerts
+
+---
+
+## 🎯 Use Cases
+
+1. **Crypto/Investment Groups**: Protects from scam links, fake airdrops, pump schemes
+2. **Community Groups**: Maintains clean language and respectful environment
+3. **International Groups**: Blocks non-local language spam
+4. **High-Traffic Groups**: Handles floods and raids automatically
+5. **Moderated Communities**: Provides 24/7 automated moderation
+
+---
+
+## 🔄 Update & Maintenance
+
+### Regular Updates
+- Spam keyword lists can be updated in `config.py`
+- Bad language words can be customized
+- Whitelisted domains can be added
+- Suspicious patterns can be adjusted
+
+### Monitoring
+- Check logs in `logs/night_watchman.log`
+- Review analytics via `/analytics` command
+- Monitor admin notifications
+
+---
+
+## 📝 Environment Variables
+
+```bash
+TELEGRAM_BOT_TOKEN=your_bot_token_here
+ADMIN_CHAT_ID=your_chat_id_here
+ADMIN_USER_IDS=123456789,987654321  # Optional, comma-separated
+```
+
+---
+
+## ✅ Feature Checklist
+
+- ✅ Real-time spam detection
+- ✅ Bad language detection
+- ✅ Non-Indian language blocking
+- ✅ Scammer detection on join
+- ✅ Anti-raid protection
+- ✅ Auto-warn/mute/ban
+- ✅ Admin commands
+- ✅ Analytics tracking
+- ✅ Admin notifications
+- ✅ Welcome messages
+- ✅ Bot message auto-delete
+- ✅ New user restrictions
+- ✅ Rate limiting
+- ✅ Duplicate detection
+- ✅ Crypto address detection
+- ✅ URL filtering
+- ✅ Peak hours analysis
+- ✅ 90-day data retention
+
+---
+
+*Built with ❤️ by @DecentralizedJM | Powered by Mudrex*
+
+
