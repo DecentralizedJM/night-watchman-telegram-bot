@@ -300,11 +300,14 @@ class SpamDetector:
             del self.user_warnings[user_id]
     
     def _check_non_indian_language(self, message: str) -> Tuple[bool, str]:
-        """Check if message contains non-Indian languages (Chinese, Korean, Russian, etc.)"""
+        """Check if message contains non-Indian languages (Chinese, Korean, Russian, etc.)
+        
+        Note: Hindi (Devanagari), Tamil, Telugu, Bengali, etc. are ALLOWED as Indian languages.
+        """
         if not self.config.BLOCK_NON_INDIAN_LANGUAGES:
             return False, ""
         
-        # Unicode ranges for different languages
+        # Unicode ranges for BLOCKED non-Indian languages
         language_ranges = {
             'chinese': [
                 (0x4E00, 0x9FFF),  # CJK Unified Ideographs
@@ -332,6 +335,17 @@ class SpamDetector:
                 (0x1EA0, 0x1EFF),  # Vietnamese Extended
             ],
         }
+        
+        # Indian languages (ALLOWED - Devanagari, Tamil, Telugu, Bengali, etc.)
+        # 0x0900-0x097F: Devanagari (Hindi, Marathi, Sanskrit)
+        # 0x0980-0x09FF: Bengali
+        # 0x0A00-0x0A7F: Gurmukhi (Punjabi)
+        # 0x0A80-0x0AFF: Gujarati
+        # 0x0B00-0x0B7F: Oriya
+        # 0x0B80-0x0BFF: Tamil
+        # 0x0C00-0x0C7F: Telugu
+        # 0x0C80-0x0CFF: Kannada
+        # 0x0D00-0x0D7F: Malayalam
         
         detected_languages = []
         for lang, ranges in language_ranges.items():

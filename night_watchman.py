@@ -236,21 +236,18 @@ class NightWatchman:
             if self.config.REPUTATION_ENABLED:
                 self.reputation.track_daily_activity(user_id, username, user_name)
             
-            # Check for forwarded messages
+            # Check for forwarded messages (blocked for everyone except admins)
             if message.get('forward_date') or message.get('forward_from') or message.get('forward_from_chat'):
                 if self.config.BLOCK_FORWARDS:
-                    # Admins can always forward
+                    # Only admins can forward
                     if self.config.FORWARD_ALLOW_ADMINS and await self._is_admin(chat_id, user_id):
-                        pass  # Allow
-                    # VIPs can forward
-                    elif self.reputation.can_forward(user_id):
-                        pass  # Allow
+                        pass  # Allow admins
                     else:
-                        # Delete and warn
+                        # Delete and warn - no exceptions
                         await self._delete_message(chat_id, message_id)
                         await self._send_message(
                             chat_id,
-                            f"⚠️ <b>{user_name}</b>, forwarding messages is not allowed. Build reputation to unlock this feature."
+                            f"⚠️ <b>{user_name}</b>, forwarding messages is not allowed in this group."
                         )
                         return
             
@@ -505,9 +502,18 @@ I am a spam detection bot that protects Telegram groups from:
                 await self._send_message(chat_id, msg, auto_delete=False)
         
         elif text.startswith('/leaderboard'):
-            # Show leaderboard
+            # Show leaderboard with optional days filter
             if self.config.REPUTATION_ENABLED:
-                msg = self.reputation.format_leaderboard()
+                parts = text.split()
+                days = 0  # Default: lifetime
+                if len(parts) > 1:
+                    try:
+                        days = int(parts[1])
+                        if days < 1 or days > 365:
+                            days = 0
+                    except ValueError:
+                        days = 0
+                msg = self.reputation.format_leaderboard(days=days)
                 await self._send_message(chat_id, msg, auto_delete=False)
         
         elif text.startswith('/guidelines'):
@@ -559,9 +565,20 @@ I am a spam detection bot that protects Telegram groups from:
                 await self._send_message(chat_id, msg)
             return True
         
-        elif command == '/leaderboard':
+        elif text.startswith('/leaderboard'):
             if self.config.REPUTATION_ENABLED:
-                msg = self.reputation.format_leaderboard()
+                # Parse days from command: /leaderboard or /leaderboard 10
+                parts = text.split()
+                days = 0  # Default: lifetime
+                if len(parts) > 1:
+                    try:
+                        days = int(parts[1])
+                        if days < 1 or days > 365:
+                            days = 0  # Invalid, use lifetime
+                    except ValueError:
+                        days = 0  # Not a number, use lifetime
+                
+                msg = self.reputation.format_leaderboard(days=days)
                 await self._send_message(chat_id, msg)
             return True
         

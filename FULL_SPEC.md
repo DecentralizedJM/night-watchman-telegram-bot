@@ -29,8 +29,11 @@
 - Score ≥ 0.3 → Flag for review
 - Score < 0.3 → Allow
 
-### 2. Bad Language Detection
-- **Profanity Filter**: Detects inappropriate words
+### 2. Bad Language Detection (English + Hindi/Hinglish)
+- **Profanity Filter**: Detects inappropriate words in multiple languages
+  - **English profanity**: fuck, shit, bitch, etc.
+  - **Hindi/Hinglish abuse**: madarchod, bhenchod, chutiya, gaandu, etc.
+  - **Romanized variations**: mc, bc, bkl, etc.
 - **Configurable Actions**:
   - `warn` - Warn user only
   - `delete` - Delete message only
@@ -38,13 +41,20 @@
   - `mute` - Direct mute
 - **Auto-escalation**: After warnings, mutes/bans apply
 
-### 3. Non-Indian Language Detection & Auto-Ban
+### 3. Hindi/Hinglish Spam Detection
+- **Detects Hindi spam patterns**: "dm karo", "paisa kamao", "lakho kamao"
+- **Crypto scams in Hinglish**: "free crypto milega", "airdrop milega"
+- **Action phrases**: "whatsapp karo", "link pe click", "jaldi grab karo"
+- **All Indian languages allowed**: Hindi (Devanagari), Tamil, Telugu, Bengali, etc.
+
+### 4. Non-Indian Language Detection & Auto-Ban
 - **Detects Languages**: Chinese, Korean, Russian, Japanese, Arabic, Thai, Vietnamese
+- **Allows All Indian Languages**: Hindi, Tamil, Telugu, Bengali, Gujarati, etc.
 - **Immediate Ban**: Users posting suspicious links in non-Indian languages are banned instantly
 - **Message Deletion**: Messages deleted before ban
 - **Admin Notification**: Reports sent to admin chat
 
-### 4. Scammer Detection on Join
+### 5. Scammer Detection on Join
 - **Suspicious Username Patterns**:
   - Only numbers (12345)
   - Generic patterns (user123, telegram123)
@@ -210,7 +220,9 @@ Sent to `ADMIN_CHAT_ID` when spam is detected:
 
 ## ⭐ Reputation System
 
-### Points System
+### Points System (No Perks - Campaign Ready)
+Points track engagement and can be used for campaigns/rewards. **No restrictions based on reputation.**
+
 | Action | Points | Direction |
 |--------|--------|-----------|
 | Daily activity | +1 | Positive |
@@ -219,21 +231,25 @@ Sent to `ADMIN_CHAT_ID` when spam is detected:
 | Muted | -25 | Negative |
 | Unmuted (false positive) | +15 | Positive |
 
-### Reputation Levels
-| Level | Points | Emoji | Perks |
-|-------|--------|-------|-------|
-| Newcomer | 0-50 | 🆕 | Standard restrictions |
-| Member | 51-200 | 🌟 | Can post links |
-| Trusted | 201-500 | ⭐ | Bypass some restrictions |
-| VIP | 501+ | 💎 | Can forward messages |
+### Reputation Levels (Display Only)
+| Level | Points | Emoji |
+|-------|--------|-------|
+| Newcomer | 0-50 | 🆕 |
+| Member | 51-200 | 🌟 |
+| Trusted | 201-500 | ⭐ |
+| VIP | 501+ | 💎 |
+
+**Note:** Levels are for display only. No perks or restrictions are applied.
 
 ### Commands
 - `/rep` - Check your reputation and level
-- `/leaderboard` - View top 10 users
+- `/leaderboard` - All-time top 10 users
+- `/leaderboard 7` - Top users from last 7 days
+- `/leaderboard 30` - Top users from last 30 days
 
 ### Data Storage
 - **File**: `data/reputation.json`
-- **Tracked**: Points, warnings, valid reports, join date, last active
+- **Tracked**: Points, daily points, warnings, valid reports, join date, last active
 
 ---
 
@@ -246,7 +262,8 @@ Sent to `ADMIN_CHAT_ID` when spam is detected:
 | `/admins` | Tag all group admins | Everyone |
 | `/report` | Report spam (reply to message) | Everyone |
 | `/rep` | Check your reputation | Everyone |
-| `/leaderboard` | Top 10 users by reputation | Everyone |
+| `/leaderboard` | All-time top 10 users | Everyone |
+| `/leaderboard N` | Top users from last N days | Everyone |
 
 ---
 
@@ -255,14 +272,13 @@ Sent to `ADMIN_CHAT_ID` when spam is detected:
 ### How It Works
 - **Blocks all forwarded messages** by default
 - Detects: `forward_from`, `forward_from_chat`, `forward_date`
-- **Admins always bypass** (configurable)
-- **VIPs (500+ rep) can forward** 
+- **Only admins can forward** (configurable)
 
 ### Configuration
 ```python
 BLOCK_FORWARDS = True
 FORWARD_ALLOW_ADMINS = True
-FORWARD_MIN_REP = 500  # REP_LEVEL_VIP
+# No VIP bypass - forwards blocked for everyone except admins
 ```
 
 ---
@@ -497,7 +513,8 @@ ADMIN_USER_IDS=123456789,987654321  # Optional, comma-separated
 ## ✅ Feature Checklist
 
 - ✅ Real-time spam detection
-- ✅ Bad language detection
+- ✅ **Hindi/Hinglish spam detection**
+- ✅ Bad language detection (English + Hindi)
 - ✅ Non-Indian language blocking
 - ✅ Scammer detection on join
 - ✅ Anti-raid protection
@@ -514,9 +531,10 @@ ADMIN_USER_IDS=123456789,987654321  # Optional, comma-separated
 - ✅ URL filtering
 - ✅ Peak hours analysis
 - ✅ 90-day data retention
-- ✅ **Reputation System** (points, levels, perks)
+- ✅ **Reputation System** (points only, no perks)
+- ✅ **Date-based Leaderboards** (/leaderboard N for last N days)
 - ✅ **User Commands** (/guidelines, /help, /admins, /report, /rep, /leaderboard)
-- ✅ **Forward Detection** (block forwards, VIP bypass)
+- ✅ **Forward Detection** (admins only)
 - ✅ **Username Requirement** (mute on join, grace period)
 - ✅ **Report System** (user reports to admins)
 

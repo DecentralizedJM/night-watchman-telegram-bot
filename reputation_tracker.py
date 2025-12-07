@@ -91,9 +91,17 @@ class ReputationTracker:
         """Add points to user, return new total"""
         self._ensure_user(user_id, username, first_name)
         key = self._get_user_key(user_id)
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         
         self.data['users'][key]['points'] += points
         self.data['users'][key]['last_active'] = datetime.now(timezone.utc).isoformat()
+        
+        # Track daily points for date-based leaderboards
+        if 'daily_points' not in self.data['users'][key]:
+            self.data['users'][key]['daily_points'] = {}
+        if today not in self.data['users'][key]['daily_points']:
+            self.data['users'][key]['daily_points'][today] = 0
+        self.data['users'][key]['daily_points'][today] += points
         
         # Update username/name if provided
         if username:
@@ -181,16 +189,16 @@ class ReputationTracker:
         }
     
     def can_post_links(self, user_id: int) -> bool:
-        """Check if user can post links (Member+)"""
-        return self.get_points(user_id) >= self.config.REP_LEVEL_MEMBER
+        """DEPRECATED: Links allowed for everyone now. Kept for compatibility."""
+        return True  # No restrictions based on reputation
     
     def can_forward(self, user_id: int) -> bool:
-        """Check if user can forward messages (VIP)"""
-        return self.get_points(user_id) >= self.config.REP_LEVEL_VIP
+        """DEPRECATED: Forwards controlled by admin setting only. Kept for compatibility."""
+        return False  # Admins only can forward (controlled in main bot)
     
     def is_trusted(self, user_id: int) -> bool:
-        """Check if user is trusted (Trusted+)"""
-        return self.get_points(user_id) >= self.config.REP_LEVEL_TRUSTED
+        """DEPRECATED: No reputation-based trust. Kept for compatibility."""
+        return True  # Everyone is trusted equally
     
     # ==================== Event Tracking ====================
     
@@ -220,31 +228,64 @@ class ReputationTracker:
     
     # ==================== Leaderboard ====================
     
-    def get_leaderboard(self, limit: int = 10) -> List[Dict]:
-        """Get top users by reputation"""
+    def get_leaderboard(self, limit: int = 10, days: int = 0) -> List[Dict]:
+        """
+        Get top users by reputation.
+        
+        Args:
+            limit: Number of users to return
+            days: If 0, return lifetime leaderboard. If > 0, return points earned in last N days.
+        """
         users = []
+        today = datetime.now(timezone.utc)
+        
         for key, user_data in self.data.get('users', {}).items():
+            if days > 0:
+                # Calculate points earned in the last N days
+                daily_points = user_data.get('daily_points', {})
+                period_points = 0
+                for i in range(days):
+                    date_str = (today - timedelta(days=i)).strftime("%Y-%m-%d")
+                    period_points += daily_points.get(date_str, 0)
+                points = period_points
+            else:
+                # Lifetime points
+                points = user_data.get('points', 0)
+            
             users.append({
                 'user_id': user_data.get('user_id'),
                 'username': user_data.get('username', ''),
                 'first_name': user_data.get('first_name', 'Unknown'),
-                'points': user_data.get('points', 0),
+                'points': points,
                 'level': self.get_level(user_data.get('user_id', 0))[0],
                 'emoji': self.get_level(user_data.get('user_id', 0))[1]
             })
         
-        # Sort by points descending
+        # Sort by points descending, filter out zero points for date-based
+        if days > 0:
+            users = [u for u in users if u['points'] > 0]
         users.sort(key=lambda x: x['points'], reverse=True)
         return users[:limit]
     
-    def format_leaderboard(self, limit: int = 10) -> str:
-        """Format leaderboard as message"""
-        leaders = self.get_leaderboard(limit)
+    def format_leaderboard(self, limit: int = 10, days: int = 0) -> str:
+        """
+        Format leaderboard as message.
+        
+        Args:
+            limit: Number of users to show
+            days: If 0, lifetime. If > 0, last N days.
+        """
+        leaders = self.get_leaderboard(limit, days)
         
         if not leaders:
+            if days > 0:
+                return f"📊 <b>Leaderboard (Last {days} days)</b>\n\nNo activity in this period!"
             return "📊 <b>Leaderboard</b>\n\nNo users yet!"
         
-        msg = "🏆 <b>Reputation Leaderboard</b>\n\n"
+        if days > 0:
+            msg = f"🏆 <b>Reputation Leaderboard</b>\n<i>Last {days} days</i>\n\n"
+        else:
+            msg = "🏆 <b>Reputation Leaderboard</b>\n<i>All time</i>\n\n"
         
         medals = ["🥇", "🥈", "🥉"]
         for i, user in enumerate(leaders):

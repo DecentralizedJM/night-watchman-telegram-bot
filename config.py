@@ -16,16 +16,28 @@ class Config:
     
     # Spam Detection Settings
     SPAM_KEYWORDS = [
-        # Crypto scams
+        # Crypto scams (English)
         "dm me for", "dm for gains", "100x", "guaranteed profit",
         "free airdrop", "claim now", "act fast", "limited time",
         "wallet connect", "validate wallet", "sync wallet",
-        # Common spam patterns
+        # Common spam patterns (English)
         "click here", "join now", "hurry up", "don't miss",
         "make money fast", "work from home", "be your own boss",
-        # Suspicious phrases
+        # Suspicious phrases (English)
         "send me", "invest with me", "trading signals",
         "binary options", "forex signals",
+        
+        # Hindi/Hinglish Spam Patterns
+        "dm karo", "dm kijiye", "message karo", "contact karo",
+        "paisa kamao", "paise kamao", "ghar baithe kamao", "lakho kamao",
+        "jaldi karo", "abhi join karo", "miss mat karo",
+        "free mein", "muft mein", "guaranteed return",
+        "double paisa", "paise double", "roz kamao", "daily kamao",
+        "invest karo", "trading sikho", "profit pakka",
+        "airdrop milega", "free crypto", "free coins",
+        "whatsapp karo", "call karo", "telegram pe aao",
+        "scheme join karo", "yahan click karo", "link pe click",
+        "limited offer", "jaldi grab karo", "sirf aaj",
     ]
     
     # Suspicious URL patterns
@@ -64,10 +76,24 @@ class Config:
     # Bad Language Detection
     BAD_LANGUAGE_ENABLED = True
     BAD_LANGUAGE_WORDS = [
-        # Profanity (common words - add more as needed)
+        # English Profanity
         "fuck", "shit", "damn", "bitch", "asshole", "bastard",
         "crap", "piss", "hell", "dick", "cock", "pussy",
-        # Add more as needed - keep it configurable
+        
+        # Hindi/Hinglish Profanity & Abuse
+        "madarchod", "bhenchod", "chutiya", "gaandu", "haramkhor",
+        "randi", "saala", "saali", "bhosdike", "lawda", "loda",
+        "chut", "gand", "behenchod", "mc", "bc", "bkl",
+        "kutte", "kutta", "kamina", "kamini", "harami",
+        "chodu", "chodna", "chudai", "lund", "lundura",
+        "jhant", "jhatu", "ullu", "gadha", "bakchod", "bakchodi",
+        "madar", "behen", "bhosda", "bhosdika", "bhosdiwala",
+        "tatti", "moot", "suvar", "suar", "hijda", "chakka",
+        "dalla", "dallal", "rakhail", "pataka", "raand",
+        
+        # Hinglish variations (romanized)
+        "madarc**d", "behen c**d", "chu***a", "g**du",
+        "b***i", "r**di", "l**d", "bh**d",
     ]
     BAD_LANGUAGE_ACTION = "delete_and_warn"  # "warn", "delete", "delete_and_warn", "mute"
     
@@ -164,7 +190,9 @@ class Config:
 /admins - Tag admins for help
 /report - Report spam (reply to message)
 /rep - Check your reputation
-/leaderboard - Top users
+/leaderboard - All-time top users
+/leaderboard 7 - Top users (last 7 days)
+/leaderboard 30 - Top users (last 30 days)
 
 <b>Admins:</b>
 /warn - Warn a user
@@ -176,7 +204,8 @@ class Config:
 
 <i>Powered by Mudrex</i>"""
     
-    # Reputation System
+    # Reputation System (Points only - no perks/restrictions)
+    # Points are for tracking engagement and can be used for campaigns
     REPUTATION_ENABLED = True
     REP_DAILY_ACTIVE = 1        # Points for daily activity
     REP_VALID_REPORT = 10       # Points for valid spam report
@@ -184,15 +213,15 @@ class Config:
     REP_MUTE_PENALTY = 25       # Points lost for mute
     REP_UNMUTE_BONUS = 15       # Points for being unmuted (false positive)
     
-    # Reputation Levels
-    REP_LEVEL_MEMBER = 50       # Can post links
-    REP_LEVEL_TRUSTED = 200     # Bypass some restrictions
-    REP_LEVEL_VIP = 500         # Can forward messages
+    # Reputation Levels (display only - NO perks/restrictions)
+    REP_LEVEL_MEMBER = 50       # Display level only
+    REP_LEVEL_TRUSTED = 200     # Display level only
+    REP_LEVEL_VIP = 500         # Display level only
     
-    # Forward Detection
+    # Forward Detection (applies to ALL users equally)
     BLOCK_FORWARDS = True
     FORWARD_ALLOW_ADMINS = True
-    FORWARD_MIN_REP = 500       # VIPs can forward (REP_LEVEL_VIP)
+    # REMOVED: VIP forward bypass - forwards blocked for everyone except admins
     
     # Username Requirement
     REQUIRE_USERNAME = True
