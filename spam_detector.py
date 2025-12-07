@@ -144,6 +144,13 @@ class SpamDetector:
                     result['is_spam'] = True
                     result['action'] = 'delete_and_ban'
         
+        # 10. Mention spam detection (repeated @mentions with promotional keywords)
+        mention_score, mention_count = self._check_mention_spam(message)
+        if mention_score > 0:
+            result['spam_score'] += mention_score
+            result['reasons'].append(f"Mention spam detected ({mention_count} mentions)")
+            result['details']['mentions'] = mention_count
+        
         # Determine if spam based on score
         if result['spam_score'] >= 0.7:
             result['is_spam'] = True
@@ -284,6 +291,46 @@ class SpamDetector:
             if pattern.search(message):
                 return 0.4
         return 0.0
+    
+    def _check_mention_spam(self, message: str) -> Tuple[float, int]:
+        """Check for mention spam pattern (e.g., @channel @channel @channel + promotional text)
+        
+        Detects bot/spam behavior like:
+        @somechannel @somechannel @somechannel 
+        Join now 
+        hyperlink
+        """
+        # Find all @mentions
+        mention_pattern = r'@[\w]+'
+        mentions = re.findall(mention_pattern, message)
+        mention_count = len(mentions)
+        
+        # Check if message has promotional/spam keywords
+        spam_keywords = ['join', 'click', 'now', 'link', 'hurry', 'act', 'fast', "don't miss"]
+        has_promo = any(keyword in message.lower() for keyword in spam_keywords)
+        
+        # Scoring logic:
+        score = 0.0
+        
+        # 3+ mentions is suspicious
+        if mention_count >= 5:
+            score = 0.7  # High confidence spam
+        elif mention_count >= 3:
+            if has_promo:
+                score = 0.6  # Strong spam signal
+            else:
+                score = 0.3  # Moderate suspicion
+        elif mention_count >= 2:
+            if has_promo:
+                score = 0.4  # Mention spam with promo
+        
+        # Check for duplicate mentions (same @channel multiple times)
+        unique_mentions = len(set(mentions))
+        if mention_count > 0 and unique_mentions < mention_count * 0.5:
+            # Many duplicates = definitely spam
+            score = max(score, 0.5)
+        
+        return score, mention_count
     
     def add_warning(self, user_id: int) -> int:
         """Add warning to user, return total warnings"""
