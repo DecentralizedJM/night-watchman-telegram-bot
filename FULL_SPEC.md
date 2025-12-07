@@ -200,6 +200,113 @@ Sent to `ADMIN_CHAT_ID` when spam is detected:
 - Suspicious patterns detected
 - Action taken (ban/restrict)
 
+### User Reports
+- Reporter information
+- Reported user details
+- Reported message content
+- Chat and message ID for action
+
+---
+
+## ⭐ Reputation System
+
+### Points System
+| Action | Points | Direction |
+|--------|--------|-----------|
+| Daily activity | +1 | Positive |
+| Valid spam report | +10 | Positive |
+| Warning received | -10 | Negative |
+| Muted | -25 | Negative |
+| Unmuted (false positive) | +15 | Positive |
+
+### Reputation Levels
+| Level | Points | Emoji | Perks |
+|-------|--------|-------|-------|
+| Newcomer | 0-50 | 🆕 | Standard restrictions |
+| Member | 51-200 | 🌟 | Can post links |
+| Trusted | 201-500 | ⭐ | Bypass some restrictions |
+| VIP | 501+ | 💎 | Can forward messages |
+
+### Commands
+- `/rep` - Check your reputation and level
+- `/leaderboard` - View top 10 users
+
+### Data Storage
+- **File**: `data/reputation.json`
+- **Tracked**: Points, warnings, valid reports, join date, last active
+
+---
+
+## 💬 User Commands
+
+| Command | Description | Available To |
+|---------|-------------|--------------|
+| `/guidelines` | Show community rules | Everyone |
+| `/help` | List all commands | Everyone |
+| `/admins` | Tag all group admins | Everyone |
+| `/report` | Report spam (reply to message) | Everyone |
+| `/rep` | Check your reputation | Everyone |
+| `/leaderboard` | Top 10 users by reputation | Everyone |
+
+---
+
+## ↩️ Forward Detection
+
+### How It Works
+- **Blocks all forwarded messages** by default
+- Detects: `forward_from`, `forward_from_chat`, `forward_date`
+- **Admins always bypass** (configurable)
+- **VIPs (500+ rep) can forward** 
+
+### Configuration
+```python
+BLOCK_FORWARDS = True
+FORWARD_ALLOW_ADMINS = True
+FORWARD_MIN_REP = 500  # REP_LEVEL_VIP
+```
+
+---
+
+## 📛 Username Requirement
+
+### How It Works
+1. User joins without Telegram username
+2. Bot immediately mutes user
+3. Warning message with instructions sent
+4. 24-hour grace period to set username
+5. User kicked if no username after grace period
+
+### Configuration
+```python
+REQUIRE_USERNAME = True
+USERNAME_GRACE_PERIOD_HOURS = 24
+USERNAME_WARNING_MESSAGE = "..."  # Customizable
+```
+
+---
+
+## 🚨 Report System
+
+### How It Works
+1. User replies to suspicious message with `/report`
+2. Report command is deleted (keeps chat clean)
+3. Report sent to admin chat with:
+   - Reporter info
+   - Reported user info
+   - Message content
+   - Chat/message IDs for action
+4. Reporter gets confirmation
+
+### Anti-Abuse
+- **Cooldown**: 60 seconds between reports per user
+- **Valid reports**: Earn +10 reputation points
+
+### Configuration
+```python
+REPORT_ENABLED = True
+REPORT_COOLDOWN_SECONDS = 60
+```
+
 ---
 
 ## ⚙️ Configuration Options
@@ -291,14 +398,17 @@ WELCOME_MESSAGE = "..."  # Customizable
 
 ```
 night-watchman-telegram-bot/
-├── night_watchman.py      # Main bot file
+├── night_watchman.py      # Main bot file (1100+ lines)
 ├── spam_detector.py       # Spam detection engine
 ├── analytics_tracker.py   # Analytics tracking system
+├── reputation_tracker.py  # Reputation system (NEW)
 ├── config.py             # Configuration settings
 ├── requirements.txt       # Python dependencies
 ├── README.md             # User documentation
+├── FULL_SPEC.md          # This specification
 ├── data/
-│   └── analytics.json    # Analytics data (auto-created)
+│   ├── analytics.json    # Analytics data (auto-created)
+│   └── reputation.json   # Reputation data (auto-created)
 └── logs/
     └── night_watchman.log # Bot logs (auto-created)
 ```
@@ -404,6 +514,11 @@ ADMIN_USER_IDS=123456789,987654321  # Optional, comma-separated
 - ✅ URL filtering
 - ✅ Peak hours analysis
 - ✅ 90-day data retention
+- ✅ **Reputation System** (points, levels, perks)
+- ✅ **User Commands** (/guidelines, /help, /admins, /report, /rep, /leaderboard)
+- ✅ **Forward Detection** (block forwards, VIP bypass)
+- ✅ **Username Requirement** (mute on join, grace period)
+- ✅ **Report System** (user reports to admins)
 
 ---
 
