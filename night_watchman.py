@@ -290,8 +290,11 @@ class NightWatchman:
             # Check for admin commands first
             if self.config.ADMIN_COMMANDS_ENABLED and text.startswith('/'):
                 if await self._is_admin(chat_id, user_id):
+                    logger.info(f"Processing admin command from {user_id}: {text}")
                     await self._handle_admin_command(chat_id, user_id, text, message)
                     return
+                else:
+                    logger.info(f"Command from non-admin {user_id}: {text}")
             
             # Analyze message for spam and bad language
             result = self.detector.analyze(text, user_id, join_date)
@@ -1015,6 +1018,7 @@ I am a spam detection bot that protects Telegram groups from:
     
     async def _handle_admin_command(self, chat_id: int, user_id: int, text: str, message: Dict):
         """Handle admin commands"""
+        logger.info(f"🔧 _handle_admin_command called: command='{text}', admin={user_id}")
         parts = text.split()
         command = parts[0].lower()
         
@@ -1023,6 +1027,9 @@ I am a spam detection bot that protects Telegram groups from:
         target_user_id = None
         if reply_to:
             target_user_id = reply_to.get('from', {}).get('id')
+            logger.info(f"Reply detected: target_user_id={target_user_id}")
+        else:
+            logger.info(f"No reply detected for command: {command}")
         
         if command == '/warn' and target_user_id:
             warnings = self.detector.add_warning(target_user_id)
@@ -1057,6 +1064,7 @@ I am a spam detection bot that protects Telegram groups from:
             await self._send_message(chat_id, f"✅ Warnings cleared for <b>{target_name}</b>.")
             
         elif command == '/enhance' and target_user_id:
+            logger.info(f"💎 /enhance command received from admin {user_id} for target {target_user_id}")
             # Admin enhancement - award +15 points to user
             message_id = message.get('message_id')
             target_name = reply_to.get('from', {}).get('first_name', 'User')
