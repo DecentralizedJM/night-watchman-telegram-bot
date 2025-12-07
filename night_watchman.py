@@ -351,22 +351,33 @@ class NightWatchman:
             user = reaction_data.get('user', {})
             reactor_id = user.get('id')
             
+            logger.info(f"🔔 Reaction received: chat={chat_id}, message={message_id}, reactor={reactor_id}")
+            
             # Get new reactions
             new_reaction = reaction_data.get('new_reaction', [])
             
             if not new_reaction:
+                logger.info(f"No new reaction found")
                 return
+            
+            logger.info(f"New reactions: {new_reaction}")
             
             # Check if reactor is admin
             is_admin = await self._is_admin(chat_id, reactor_id)
             if not is_admin:
+                logger.info(f"Reactor {reactor_id} is not an admin")
                 return  # Only admins can give enhancement
+            
+            logger.info(f"Reactor {reactor_id} is an admin ✓")
             
             # Check if any emoji reaction was added (not just specific emoji)
             has_emoji = any(r.get('type') == 'emoji' for r in new_reaction)
             
             if not has_emoji:
+                logger.info(f"No emoji reaction found in new_reaction")
                 return  # No emoji reaction
+            
+            logger.info(f"Emoji reaction found ✓")
             
             # Check if this message already received admin enhancement (prevent duplicates)
             message_key = f"{chat_id}_{message_id}"
@@ -378,8 +389,10 @@ class NightWatchman:
             message_author_id = self.message_authors.get(message_key)
             
             if not message_author_id:
-                logger.warning(f"Cannot find author for message {message_id} in chat {chat_id}")
+                logger.warning(f"Cannot find author for message {message_id} in chat {chat_id}. Tracked messages: {len(self.message_authors)}")
                 return
+            
+            logger.info(f"Message author found: {message_author_id} ✓")
             
             # Check if message author is an admin (exclude admins from reputation)
             if self.config.REP_EXCLUDE_ADMINS:
@@ -387,6 +400,8 @@ class NightWatchman:
                 if author_is_admin:
                     logger.info(f"Message author {message_author_id} is admin, excluded from reputation")
                     return
+            
+            logger.info(f"Message author is not admin (eligible for points) ✓")
             
             # Award enhancement points to message author
             self.reputation.admin_enhancement(message_author_id)
@@ -397,7 +412,7 @@ class NightWatchman:
             logger.info(f"⭐ Admin {reactor_id} enhanced message {message_id} by user {message_author_id} (+15 points)")
                 
         except Exception as e:
-            logger.error(f"Error handling message reaction: {e}")
+            logger.error(f"Error handling message reaction: {e}", exc_info=True)
 
     
     async def _handle_chat_member(self, chat_member: Dict):
