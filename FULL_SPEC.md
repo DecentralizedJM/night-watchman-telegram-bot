@@ -238,11 +238,19 @@ Points track engagement and can be used for campaigns/rewards. **No restrictions
 
 | Action | Points | Direction |
 |--------|--------|-----------|
-| Daily activity | +1 | Positive |
+| Daily activity | +5 | Positive |
 | Valid spam report | +10 | Positive |
+| 7-day active streak bonus | +5 | Positive |
+| 30-day active streak bonus | +10 | Positive |
+| Admin enhancement (any emoji) | +15 | Positive |
 | Warning received | -10 | Negative |
 | Muted | -25 | Negative |
 | Unmuted (false positive) | +15 | Positive |
+
+**Admin Enhancement:**
+- Admins can react with any emoji to enhance quality messages (+15 points)
+- Max 15 points per message (no duplicate enhancements)
+- Admins are excluded from earning reputation points
 
 ### Reputation Levels (Display Only)
 | Level | Points | Emoji |

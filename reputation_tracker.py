@@ -18,17 +18,20 @@ class ReputationTracker:
     Tracks user reputation across the group.
     
     Points system:
-    - Daily activity: +1 point
+    - Daily activity: +5 points
     - Valid spam report: +10 points
     - Warning received: -10 points
     - Muted: -25 points
     - Unmuted (false positive): +15 points
+    - Admin enhancement (⭐ emoji): +15 points
+    - 7-day streak bonus: +5 points (total: 7x5 + 5 = 40)
+    - 30-day streak bonus: +10 points (total: 30x5 + 10 = 160)
     
-    Levels:
-    - Newcomer (0-50): Standard restrictions
-    - Member (51-200): Can post links
-    - Trusted (201-500): Bypass slow mode
-    - VIP (501+): Can forward messages
+    Levels (display only - NO perks):
+    - Newcomer (0-50)
+    - Member (51-200)
+    - Trusted (201-500)
+    - VIP (501+)
     """
     
     def __init__(self):
@@ -137,7 +140,11 @@ class ReputationTracker:
     
     def track_daily_activity(self, user_id: int, username: str = "", first_name: str = "") -> bool:
         """
-        Track daily activity. Awards +1 point once per day.
+        Track daily activity. Awards +5 points once per day.
+        Also checks for streak bonuses:
+        - 7-day streak: +5 bonus points
+        - 30-day streak: +10 bonus points
+        
         Returns True if points were awarded.
         """
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -148,7 +155,23 @@ class ReputationTracker:
         
         if user_id not in self.data['daily_activity'][today]:
             self.data['daily_activity'][today].append(user_id)
+            
+            # Award daily points
             self.add_points(user_id, self.config.REP_DAILY_ACTIVE, "daily activity", username, first_name)
+            
+            # Check for streak bonuses
+            streak_days = self._get_active_streak(user_id)
+            
+            # 7-day streak bonus
+            if streak_days == 7:
+                self.add_points(user_id, self.config.REP_7DAY_STREAK_BONUS, "7-day active streak bonus", username, first_name)
+                logger.info(f"🔥 User {user_id} earned 7-day streak bonus!")
+            
+            # 30-day streak bonus
+            elif streak_days == 30:
+                self.add_points(user_id, self.config.REP_30DAY_STREAK_BONUS, "30-day active streak bonus", username, first_name)
+                logger.info(f"🔥🔥 User {user_id} earned 30-day streak bonus!")
+            
             return True
         
         # Still update last_active even if no points
@@ -156,6 +179,44 @@ class ReputationTracker:
         self.data['users'][key]['last_active'] = datetime.now(timezone.utc).isoformat()
         self._save_data()
         return False
+    
+    def _get_active_streak(self, user_id: int) -> int:
+        """
+        Calculate current consecutive daily activity streak.
+        Returns number of consecutive days user has been active.
+        """
+        today = datetime.now(timezone.utc).date()
+        streak = 0
+        
+        # Check backwards from today
+        for i in range(365):  # Max check 1 year back
+            check_date = (today - timedelta(days=i)).strftime("%Y-%m-%d")
+            
+            if check_date in self.data['daily_activity']:
+                if user_id in self.data['daily_activity'][check_date]:
+                    streak += 1
+                else:
+                    break  # Streak broken
+            else:
+                break  # No activity that day
+        
+        return streak
+    
+    def admin_enhancement(self, user_id: int, username: str = "", first_name: str = "") -> int:
+        """
+        Admin enhancement: Award +15 points when admin reacts with any emoji.
+        Max once per message (deduplication handled in bot).
+        Returns new total points.
+        """
+        points_awarded = self.add_points(
+            user_id, 
+            self.config.REP_ADMIN_ENHANCEMENT, 
+            "admin enhancement", 
+            username, 
+            first_name
+        )
+        logger.info(f"⭐ Admin enhanced user {user_id} with +{self.config.REP_ADMIN_ENHANCEMENT} points")
+        return points_awarded
     
     # ==================== Level System ====================
     

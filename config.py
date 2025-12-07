@@ -202,16 +202,30 @@ class Config:
 /stats - Bot statistics
 /analytics - Group analytics (DM)
 
+<b>📊 Earning Points:</b>
+Daily activity: +5 points
+Valid spam report: +10 points
+7-day streak bonus: +5 points
+30-day streak bonus: +10 points
+Admin enhancement (any emoji): +15 points (max once per message)
+Warning: -10 points
+Muted: -25 points
+Unmuted (false positive): +15 points
+
 <i>Powered by Mudrex</i>"""
     
     # Reputation System (Points only - no perks/restrictions)
     # Points are for tracking engagement and can be used for campaigns
     REPUTATION_ENABLED = True
-    REP_DAILY_ACTIVE = 1        # Points for daily activity
-    REP_VALID_REPORT = 10       # Points for valid spam report
-    REP_WARNING_PENALTY = 10    # Points lost for warning
-    REP_MUTE_PENALTY = 25       # Points lost for mute
-    REP_UNMUTE_BONUS = 15       # Points for being unmuted (false positive)
+    REP_DAILY_ACTIVE = 5             # Points for daily activity (increased from 1)
+    REP_VALID_REPORT = 10            # Points for valid spam report
+    REP_WARNING_PENALTY = 10         # Points lost for warning
+    REP_MUTE_PENALTY = 25            # Points lost for mute
+    REP_UNMUTE_BONUS = 15            # Points for being unmuted (false positive)
+    REP_ADMIN_ENHANCEMENT = 15       # Points for admin emoji enhancement on user's message (max once per message)
+    REP_7DAY_STREAK_BONUS = 5        # Extra points for 7-day active streak (total: 7x5 + 5 = 40)
+    REP_30DAY_STREAK_BONUS = 10      # Extra points for 30-day active streak (total: 30x5 + 10 = 160)
+    REP_EXCLUDE_ADMINS = True        # Exclude admins from reputation tracking
     
     # Reputation Levels (display only - NO perks/restrictions)
     REP_LEVEL_MEMBER = 50       # Display level only

@@ -75,6 +75,12 @@ class NightWatchman:
         # Track report cooldowns
         self.report_cooldowns: Dict[int, datetime] = {}  # user_id -> last_report_time
         
+        # Track message authors for admin enhancement
+        self.message_authors: Dict[str, int] = {}  # f"{chat_id}_{message_id}" -> user_id
+        
+        # Track messages that received admin enhancement (prevent duplicates)
+        self.enhanced_messages: Dict[str, bool] = {}  # f"{chat_id}_{message_id}" -> True
+        
         # Get bot's own user ID
         self.bot_user_id = None
         
@@ -135,7 +141,7 @@ class NightWatchman:
                 params = {
                     'offset': self.offset,
                     'timeout': 30,
-                    'allowed_updates': ['message', 'chat_member']
+                    'allowed_updates': ['message', 'chat_member', 'message_reaction']
                 }
                 
                 response = await self.client.get(url, params=params, timeout=35.0)
@@ -159,6 +165,11 @@ class NightWatchman:
     async def _handle_update(self, update: Dict):
         """Handle incoming update"""
         try:
+            # Handle message reactions (admin enhancement)
+            if 'message_reaction' in update:
+                await self._handle_message_reaction(update['message_reaction'])
+                return
+            
             # Handle new chat members (track join date)
             if 'chat_member' in update:
                 await self._handle_chat_member(update['chat_member'])
@@ -196,6 +207,11 @@ class NightWatchman:
             
             text = message.get('text', '') or message.get('caption', '')
             message_id = message.get('message_id')
+            
+            # Track message author for admin enhancement feature
+            if chat_id and message_id and user_id:
+                message_key = f"{chat_id}_{message_id}"
+                self.message_authors[message_key] = user_id
             
             # Only moderate group messages
             if chat_type not in ['group', 'supergroup']:
@@ -305,6 +321,63 @@ class NightWatchman:
                 
         except Exception as e:
             logger.error(f"Error handling update: {e}", exc_info=True)
+    
+    async def _handle_message_reaction(self, reaction_data: Dict):
+        """Handle message reactions for admin enhancement feature"""
+        try:
+            chat_id = reaction_data.get('chat', {}).get('id')
+            message_id = reaction_data.get('message_id')
+            user = reaction_data.get('user', {})
+            reactor_id = user.get('id')
+            
+            # Get new reactions
+            new_reaction = reaction_data.get('new_reaction', [])
+            
+            if not new_reaction:
+                return
+            
+            # Check if reactor is admin
+            is_admin = await self._is_admin(chat_id, reactor_id)
+            if not is_admin:
+                return  # Only admins can give enhancement
+            
+            # Check if any emoji reaction was added (not just specific emoji)
+            has_emoji = any(r.get('type') == 'emoji' for r in new_reaction)
+            
+            if not has_emoji:
+                return  # No emoji reaction
+            
+            # Check if this message already received admin enhancement (prevent duplicates)
+            message_key = f"{chat_id}_{message_id}"
+            if message_key in self.enhanced_messages:
+                logger.info(f"Message {message_id} already enhanced (max 15 points per message)")
+                return
+            
+            # Get the message author from our tracking
+            message_author_id = self.message_authors.get(message_key)
+            
+            if not message_author_id:
+                logger.warning(f"Cannot find author for message {message_id} in chat {chat_id}")
+                return
+            
+            # Check if message author is an admin (exclude admins from reputation)
+            if self.config.REP_EXCLUDE_ADMINS:
+                author_is_admin = await self._is_admin(chat_id, message_author_id)
+                if author_is_admin:
+                    logger.info(f"Message author {message_author_id} is admin, excluded from reputation")
+                    return
+            
+            # Award enhancement points to message author
+            self.reputation.admin_enhancement(message_author_id)
+            
+            # Mark message as enhanced (prevent duplicate enhancements)
+            self.enhanced_messages[message_key] = True
+            
+            logger.info(f"⭐ Admin {reactor_id} enhanced message {message_id} by user {message_author_id} (+15 points)")
+                
+        except Exception as e:
+            logger.error(f"Error handling message reaction: {e}")
+
     
     async def _handle_chat_member(self, chat_member: Dict):
         """Track when users join and verify suspicious accounts"""
