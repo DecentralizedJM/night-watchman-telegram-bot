@@ -64,6 +64,9 @@ class NightWatchman:
         # Track bot's own messages for auto-delete
         self.bot_messages: Dict[str, Dict] = {}  # f"{chat_id}_{message_id}" -> message_data
         
+        # Track monitored groups (for admin verification in DMs)
+        self.monitored_groups: List[int] = []  # list of chat_ids
+        
         # Get bot's own user ID
         self.bot_user_id = None
         
@@ -194,16 +197,22 @@ class NightWatchman:
                 return
             
             # Handle /analytics from admins in group (delete command, DM result)
-            if text.startswith('/analytics') and user_id in self.config.ADMIN_USER_IDS:
-                # Delete the command from group to keep it clean
-                await self._delete_message(chat_id, message_id)
-                # Send analytics via DM
-                await self._handle_analytics_command(user_id, user_id, text)
-                return
+            if text.startswith('/analytics'):
+                # Check if user is group admin
+                if await self._is_admin(chat_id, user_id):
+                    # Delete the command from group to keep it clean
+                    await self._delete_message(chat_id, message_id)
+                    # Send analytics via DM
+                    await self._handle_analytics_command(user_id, user_id, text)
+                    return
             
             # Skip messages from admins (don't moderate them)
             if await self._is_admin(chat_id, user_id):
                 return
+            
+            # Track this group as monitored
+            if chat_id not in self.monitored_groups:
+                self.monitored_groups.append(chat_id)
             
             self.stats['messages_checked'] += 1
             
@@ -453,6 +462,18 @@ I am a spam detection bot that protects Telegram groups from:
                 return status in ['creator', 'administrator']
         except Exception as e:
             logger.error(f"Error checking admin status: {e}")
+        return False
+    
+    async def _is_admin_in_any_group(self, user_id: int) -> bool:
+        """Check if user is admin in any monitored group (for DM commands)"""
+        # First check static admin list
+        if user_id in self.config.ADMIN_USER_IDS:
+            return True
+        
+        # Then check each monitored group
+        for chat_id in self.monitored_groups:
+            if await self._is_admin(chat_id, user_id):
+                return True
         return False
     
     async def _delete_message(self, chat_id: int, message_id: int) -> bool:
@@ -721,11 +742,11 @@ I am a spam detection bot that protects Telegram groups from:
     
     async def _handle_analytics_command(self, chat_id: int, user_id: int, text: str):
         """Handle /analytics command - admin only, sent via DM"""
-        # Check if user is an admin
-        if user_id not in self.config.ADMIN_USER_IDS:
+        # Check if user is an admin (in any monitored group or static list)
+        if not await self._is_admin_in_any_group(user_id):
             await self._send_message(
                 chat_id, 
-                "⛔ This command is for admins only.",
+                "⛔ This command is for group admins only.",
                 auto_delete=False
             )
             return
