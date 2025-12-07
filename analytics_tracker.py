@@ -9,6 +9,7 @@ import os
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional
 from collections import defaultdict
+from config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +27,10 @@ class AnalyticsTracker:
     - Peak activity hours
     """
     
-    DATA_FILE = "data/analytics.json"
-    
     def __init__(self):
+        self.config = Config()
+        self.data_dir = self.config.ANALYTICS_DATA_DIR
+        self.data_file = os.path.join(self.data_dir, "analytics.json")
         self.data = self._load_data()
         self._ensure_structure()
     
@@ -42,9 +44,9 @@ class AnalyticsTracker:
     def _load_data(self) -> Dict:
         """Load analytics data from file"""
         try:
-            os.makedirs("data", exist_ok=True)
-            if os.path.exists(self.DATA_FILE):
-                with open(self.DATA_FILE, 'r') as f:
+            os.makedirs(self.data_dir, exist_ok=True)
+            if os.path.exists(self.data_file):
+                with open(self.data_file, 'r') as f:
                     return json.load(f)
         except Exception as e:
             logger.error(f"Error loading analytics data: {e}")
@@ -53,8 +55,8 @@ class AnalyticsTracker:
     def _save_data(self):
         """Save analytics data to file"""
         try:
-            os.makedirs("data", exist_ok=True)
-            with open(self.DATA_FILE, 'w') as f:
+            os.makedirs(self.data_dir, exist_ok=True)
+            with open(self.data_file, 'w') as f:
                 json.dump(self.data, f, indent=2)
         except Exception as e:
             logger.error(f"Error saving analytics data: {e}")

@@ -124,6 +124,7 @@ class Config:
     # Analytics Settings
     ANALYTICS_ENABLED = True
     ANALYTICS_RETENTION_DAYS = 90  # Keep data for 90 days
+    ANALYTICS_DATA_DIR = os.getenv("ANALYTICS_DATA_DIR", "data")  # Configurable for Railway volumes
     
     # Logging
     LOG_FILE = "logs/night_watchman.log"
