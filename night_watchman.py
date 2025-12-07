@@ -252,6 +252,15 @@ class NightWatchman:
                 if handled:
                     return
             
+            # Check for admin commands first (BEFORE skipping admin messages)
+            if self.config.ADMIN_COMMANDS_ENABLED and text.startswith('/'):
+                if await self._is_admin(chat_id, user_id):
+                    logger.info(f"Processing admin command from {user_id}: {text}")
+                    await self._handle_admin_command(chat_id, user_id, text, message)
+                    return
+                else:
+                    logger.info(f"Command from non-admin {user_id}: {text}")
+            
             # Skip messages from admins (don't moderate them)
             if await self._is_admin(chat_id, user_id):
                 return
@@ -286,15 +295,6 @@ class NightWatchman:
             # Get user join date for new user detection
             member_key = f"{chat_id}_{user_id}"
             join_date = self.member_join_dates.get(member_key)
-            
-            # Check for admin commands first
-            if self.config.ADMIN_COMMANDS_ENABLED and text.startswith('/'):
-                if await self._is_admin(chat_id, user_id):
-                    logger.info(f"Processing admin command from {user_id}: {text}")
-                    await self._handle_admin_command(chat_id, user_id, text, message)
-                    return
-                else:
-                    logger.info(f"Command from non-admin {user_id}: {text}")
             
             # Analyze message for spam and bad language
             result = self.detector.analyze(text, user_id, join_date)
