@@ -141,7 +141,7 @@ class NightWatchman:
                 params = {
                     'offset': self.offset,
                     'timeout': 30,
-                    'allowed_updates': ['message', 'chat_member', 'message_reaction']
+                    'allowed_updates': ['message', 'chat_member']
                 }
                 
                 response = await self.client.get(url, params=params, timeout=35.0)
@@ -165,11 +165,6 @@ class NightWatchman:
     async def _handle_update(self, update: Dict):
         """Handle incoming update"""
         try:
-            # Handle message reactions (admin enhancement)
-            if 'message_reaction' in update:
-                await self._handle_message_reaction(update['message_reaction'])
-                return
-            
             # Handle new chat members (track join date)
             if 'chat_member' in update:
                 await self._handle_chat_member(update['chat_member'])
@@ -814,6 +809,14 @@ I am a spam detection bot that protects Telegram groups from:
             logger.error(f"Error deleting message: {e}")
         return False
     
+    async def _delete_message_after_delay(self, chat_id: int, message_id: int, delay_seconds: int):
+        """Delete a message after a delay (in seconds)"""
+        try:
+            await asyncio.sleep(delay_seconds)
+            await self._delete_message(chat_id, message_id)
+        except Exception as e:
+            logger.error(f"Error deleting message after delay: {e}")
+    
     async def _mute_user(self, chat_id: int, user_id: int) -> bool:
         """Mute a user"""
         try:
@@ -1052,6 +1055,46 @@ I am a spam detection bot that protects Telegram groups from:
             self.detector.clear_warnings(target_user_id)
             target_name = reply_to.get('from', {}).get('first_name', 'User')
             await self._send_message(chat_id, f"✅ Warnings cleared for <b>{target_name}</b>.")
+            
+        elif command == '/enhance' and target_user_id:
+            # Admin enhancement - award +15 points to user
+            message_id = message.get('message_id')
+            target_name = reply_to.get('from', {}).get('first_name', 'User')
+            target_username = reply_to.get('from', {}).get('username', '')
+            
+            # Check if target user is an admin (exclude admins from reputation)
+            if self.config.REP_EXCLUDE_ADMINS:
+                target_is_admin = await self._is_admin(chat_id, target_user_id)
+                if target_is_admin:
+                    response = await self._send_message(
+                        chat_id, 
+                        f"⚠️ Cannot enhance <b>{target_name}</b> - admins are excluded from reputation system."
+                    )
+                    # Delete command and response after 1 minute
+                    if response and message_id:
+                        response_id = response.get('result', {}).get('message_id')
+                        asyncio.create_task(self._delete_message_after_delay(chat_id, message_id, 60))
+                        if response_id:
+                            asyncio.create_task(self._delete_message_after_delay(chat_id, response_id, 60))
+                    return
+            
+            # Award enhancement points
+            self.reputation.admin_enhancement(target_user_id, target_username, target_name)
+            
+            # Send confirmation
+            response = await self._send_message(
+                chat_id,
+                f"⭐ <b>{target_name}</b> enhanced by admin! +15 points awarded."
+            )
+            
+            # Delete command and response after 1 minute
+            if response and message_id:
+                response_id = response.get('result', {}).get('message_id')
+                asyncio.create_task(self._delete_message_after_delay(chat_id, message_id, 60))
+                if response_id:
+                    asyncio.create_task(self._delete_message_after_delay(chat_id, response_id, 60))
+            
+            logger.info(f"⭐ Admin {user_id} enhanced user {target_user_id} (+15 points)")
             
         elif command == '/stats':
             uptime = datetime.now(timezone.utc) - self.stats['start_time']

@@ -134,6 +134,7 @@
 | `/ban` | Ban user permanently | Reply with `/ban` |
 | `/mute` | Mute user for 24h | Reply with `/mute` |
 | `/unwarn` | Clear user warnings | Reply with `/unwarn` |
+| `/enhance` | Award +15 reputation points | Reply with `/enhance` (auto-deletes in 1 min) |
 | `/stats` | Show bot statistics | Use `/stats` in group |
 
 ### Private Chat Commands
@@ -245,15 +246,16 @@ Points track engagement and can be used for campaigns/rewards. **No restrictions
 | Valid spam report | +10 | Positive |
 | 7-day active streak bonus | +5 | Positive |
 | 30-day active streak bonus | +10 | Positive |
-| Admin enhancement (any emoji) | +15 | Positive |
+| Admin enhancement (`/enhance`) | +15 | Positive |
 | Warning received | -10 | Negative |
 | Muted | -25 | Negative |
 | Unmuted (false positive) | +15 | Positive |
 
 **Admin Enhancement:**
-- Admins can react with any emoji to enhance quality messages (+15 points)
-- Max 15 points per message (no duplicate enhancements)
+- Admins use `/enhance` command by replying to quality messages (+15 points)
+- Command and confirmation auto-delete after 1 minute (keeps chat clean)
 - Admins are excluded from earning reputation points
+- Cannot enhance other admins
 
 ### Reputation Levels (Display Only)
 | Level | Points | Emoji |

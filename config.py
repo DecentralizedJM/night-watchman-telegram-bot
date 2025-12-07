@@ -198,10 +198,11 @@ class Config:
 /leaderboard 30 - Top users (last 30 days)
 
 <b>Admins:</b>
-/warn - Warn a user
-/mute - Mute a user
-/ban - Ban a user
-/unwarn - Clear warnings
+/warn - Warn a user (reply to message)
+/mute - Mute a user (reply to message)
+/ban - Ban a user (reply to message)
+/unwarn - Clear warnings (reply to message)
+/enhance - Award +15 points (reply to message)
 /stats - Bot statistics
 /analytics - Group analytics (DM)
 
@@ -210,7 +211,7 @@ Daily activity: +5 points
 Valid spam report: +10 points
 7-day streak bonus: +5 points
 30-day streak bonus: +10 points
-Admin enhancement (any emoji): +15 points (max once per message)
+Admin enhancement (/enhance): +15 points
 Warning: -10 points
 Muted: -25 points
 Unmuted (false positive): +15 points
