@@ -116,7 +116,7 @@ class Config:
     RAID_THRESHOLD_USERS = 10  # If 10+ new users join in window, it's a raid
     
     # Welcome Message
-    SEND_WELCOME_MESSAGE = True
+    SEND_WELCOME_MESSAGE = False  # Don't auto-send welcome (users can use /guidelines)
     WELCOME_MESSAGE = """👋 Welcome to the group!
 
 📋 <b>Rules:</b>
@@ -126,6 +126,9 @@ class Config:
 • No advertising without permission
 
 ⚠️ Violations will result in warnings, mutes, or bans."""
+    
+    # Auto-delete join/exit messages
+    DELETE_JOIN_EXIT_MESSAGES = True
     
     # Non-Indian Language Detection
     BLOCK_NON_INDIAN_LANGUAGES = True

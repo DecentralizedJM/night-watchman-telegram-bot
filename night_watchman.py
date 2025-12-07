@@ -183,6 +183,12 @@ class NightWatchman:
             new_members = message.get('new_chat_members', [])
             if new_members:
                 chat_id = message.get('chat', {}).get('id')
+                message_id = message.get('message_id')
+                
+                # Delete the join message if configured
+                if self.config.DELETE_JOIN_EXIT_MESSAGES:
+                    await self._delete_message(chat_id, message_id)
+                
                 for member in new_members:
                     # Create a fake chat_member update for each member
                     fake_update = {
@@ -193,6 +199,21 @@ class NightWatchman:
                         }
                     }
                     await self._handle_chat_member(fake_update)
+                return
+            
+            # Handle left_chat_member (when someone leaves)
+            left_member = message.get('left_chat_member')
+            if left_member:
+                chat_id = message.get('chat', {}).get('id')
+                message_id = message.get('message_id')
+                
+                # Delete the exit message if configured
+                if self.config.DELETE_JOIN_EXIT_MESSAGES:
+                    await self._delete_message(chat_id, message_id)
+                
+                # Track in analytics
+                if self.config.ANALYTICS_ENABLED:
+                    self.analytics.track_exit(chat_id)
                 return
             
             # Extract message info
