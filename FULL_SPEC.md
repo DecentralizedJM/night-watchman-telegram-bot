@@ -18,6 +18,19 @@
   - Whitelists trusted domains (mudrex.com, binance.com, github.com, etc.)
   - Detects external Telegram links (t.me, telegram.me)
   
+- **Mention Spam Detection**: ⭐ NEW
+  - Detects repeated @mentions with promotional content
+  - Pattern: "@channel @channel @channel" + "Join now" + link
+  - Scoring:
+    * 5+ mentions: 0.7 spam score (high confidence)
+    * 3-4 mentions + promotional keywords: 0.6 spam score
+    * 2+ duplicate mentions: flagged as spam
+  - Catches bot spam like:
+    ```
+    @trading @profits @crypto
+    Join now at [link]
+    ```
+
 - **Crypto Address Detection**: Flags wallet addresses (ETH, BTC, SOL)
 - **Duplicate Message Detection**: Catches repeated spam messages
 - **Formatting Abuse**: Detects excessive CAPS, repeated characters, too many emojis
