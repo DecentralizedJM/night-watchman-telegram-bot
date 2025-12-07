@@ -137,12 +137,15 @@ class SpamDetector:
                 result['non_indian_language'] = True
                 result['detected_language'] = detected_lang
                 result['reasons'].append(f"Non-Indian language detected: {detected_lang}")
-                # If contains URLs/links, mark as immediate ban
+                # Always mark for immediate action (delete or ban)
+                result['spam_score'] = 1.0  # Maximum score for immediate action
+                result['is_spam'] = True
+                # If contains URLs/links, ban immediately. Otherwise just delete.
                 if self.url_pattern.search(message):
                     result['immediate_ban'] = True
-                    result['spam_score'] = 1.0  # Maximum score for immediate action
-                    result['is_spam'] = True
                     result['action'] = 'delete_and_ban'
+                else:
+                    result['action'] = 'delete_and_warn'
         
         # 10. Mention spam detection (repeated @mentions with promotional keywords)
         mention_score, mention_count = self._check_mention_spam(message)

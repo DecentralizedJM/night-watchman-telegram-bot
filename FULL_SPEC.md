@@ -60,12 +60,13 @@
 - **Action phrases**: "whatsapp karo", "link pe click", "jaldi grab karo"
 - **All Indian languages allowed**: Hindi (Devanagari), Tamil, Telugu, Bengali, etc.
 
-### 4. Non-Indian Language Detection & Auto-Ban
+### 4. Non-Indian Language Detection & Auto-Delete/Ban
 - **Detects Languages**: Chinese, Korean, Russian, Japanese, Arabic, Thai, Vietnamese
 - **Allows All Indian Languages**: Hindi, Tamil, Telugu, Bengali, Gujarati, etc.
-- **Immediate Ban**: Users posting suspicious links in non-Indian languages are banned instantly
-- **Message Deletion**: Messages deleted before ban
-- **Admin Notification**: Reports sent to admin chat
+- **Always Deletes**: All messages in non-Indian languages are immediately deleted
+- **Immediate Ban**: Users posting links/URLs in non-Indian languages are banned instantly
+- **Warning Only**: Messages without links trigger deletion and warning (no ban)
+- **Admin Notification**: Reports sent to admin chat for all foreign language detections
 
 ### 5. Scammer Detection on Join
 - **Suspicious Username Patterns**:
@@ -210,7 +211,9 @@ Sent to `ADMIN_CHAT_ID` when spam is detected:
 - User details
 - Detected language
 - Message content
-- Immediate ban notification
+- Action taken:
+  - With links: Immediate ban
+  - Without links: Delete and warn only
 
 ### Raid Alerts
 - Chat ID

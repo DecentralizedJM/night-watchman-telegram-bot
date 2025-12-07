@@ -280,8 +280,8 @@ class NightWatchman:
             # Analyze message for spam and bad language
             result = self.detector.analyze(text, user_id, join_date)
             
-            # Handle non-Indian language spam with immediate ban
-            if result.get('immediate_ban') and result.get('non_indian_language'):
+            # Handle non-Indian language spam (with or without URLs)
+            if result.get('non_indian_language'):
                 await self._handle_non_indian_spam(
                     chat_id=chat_id,
                     message_id=message_id,
@@ -1106,30 +1106,31 @@ I am a spam detection bot that protects Telegram groups from:
     
     async def _handle_non_indian_spam(self, chat_id: int, message_id: int, user_id: int,
                                       user_name: str, username: str, text: str, result: Dict):
-        """Handle non-Indian language spam - immediate ban"""
+        """Handle non-Indian language spam - delete and warn/ban based on content"""
         detected_lang = result.get('detected_language', 'unknown')
+        has_immediate_ban = result.get('immediate_ban', False)
         
-        logger.warning(f"🚫 Non-Indian language spam from {user_name} (@{username}): {detected_lang}")
+        logger.warning(f"🚫 Non-Indian language detected from {user_name} (@{username}): {detected_lang}")
         
         # Delete the message immediately
         deleted = await self._delete_message(chat_id, message_id)
         if deleted:
             self.stats['messages_deleted'] += 1
         
-        # Ban immediately if configured
-        if self.config.AUTO_BAN_NON_INDIAN_SPAM:
+        # Ban immediately if it has URLs (immediate_ban flag) and auto-ban is enabled
+        if has_immediate_ban and self.config.AUTO_BAN_NON_INDIAN_SPAM:
             banned = await self._ban_user(chat_id, user_id)
             if banned:
                 self.stats['users_banned'] += 1
-                logger.info(f"🔨 Banned {user_name} for non-Indian language spam")
+                logger.info(f"🔨 Banned {user_name} for non-Indian language spam with links")
                 await self._send_message(
                     chat_id,
-                    f"🔨 <b>{user_name}</b> has been banned for posting suspicious content in non-Indian language ({detected_lang})."
+                    f"🔨 <b>{user_name}</b> has been banned for posting suspicious content in non-Indian language ({detected_lang}) with links."
                 )
-        
-        # Report to admin
-        if self.admin_chat_id:
-            report = f"""🚫 <b>Non-Indian Language Spam</b>
+                
+                # Report to admin
+                if self.admin_chat_id:
+                    report = f"""🚫 <b>Non-Indian Language Spam (BANNED)</b>
 
 👤 User: {user_name} (@{username or 'N/A'})
 🆔 User ID: <code>{user_id}</code>
@@ -1139,8 +1140,29 @@ I am a spam detection bot that protects Telegram groups from:
 📝 <b>Message:</b>
 <code>{text[:300]}</code>
 
-🔨 <b>Action:</b> Banned immediately"""
-            await self._send_message(self.admin_chat_id, report)
+🔨 <b>Action:</b> Banned immediately (contained links)"""
+                    await self._send_message(self.admin_chat_id, report)
+        else:
+            # Just delete and warn for non-URL foreign language messages
+            await self._send_message(
+                chat_id,
+                f"⚠️ <b>{user_name}</b>, please use English or Indian languages in this group. Message deleted."
+            )
+            
+            # Report to admin (informational)
+            if self.admin_chat_id:
+                report = f"""⚠️ <b>Non-Indian Language Detected (DELETED)</b>
+
+👤 User: {user_name} (@{username or 'N/A'})
+🆔 User ID: <code>{user_id}</code>
+💬 Chat: <code>{chat_id}</code>
+🌐 Language: {detected_lang}
+
+📝 <b>Message:</b>
+<code>{text[:300]}</code>
+
+🗑️ <b>Action:</b> Deleted and warned"""
+                await self._send_message(self.admin_chat_id, report)
     
     async def _ban_user(self, chat_id: int, user_id: int) -> bool:
         """Ban a user"""
