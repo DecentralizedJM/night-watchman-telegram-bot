@@ -1272,8 +1272,8 @@ I am a spam detection bot that protects Telegram groups from:
             logger.error(f"Error banning user: {e}")
         return False
     
-    async def _send_message(self, chat_id, text: str, auto_delete: bool = None) -> bool:
-        """Send a message and optionally auto-delete after delay"""
+    async def _send_message(self, chat_id, text: str, auto_delete: bool = None) -> Dict:
+        """Send a message and optionally auto-delete after delay. Returns full response dict."""
         try:
             url = f"https://api.telegram.org/bot{self.token}/sendMessage"
             data = {
@@ -1300,11 +1300,11 @@ I am a spam detection bot that protects Telegram groups from:
                         self.config.BOT_MESSAGE_DELETE_DELAY_SECONDS
                     ))
                 
-                return True
-            return False
+                return result  # Return full response
+            return {}  # Return empty dict on failure
         except Exception as e:
             logger.error(f"Error sending message: {e}")
-        return False
+        return {}  # Return empty dict on error
     
     async def _auto_delete_message(self, chat_id: int, message_id: int, delay_seconds: int):
         """Auto-delete a message after delay"""
