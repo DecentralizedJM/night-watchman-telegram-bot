@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from config import Config
 from spam_detector import SpamDetector
 from analytics_tracker import AnalyticsTracker
+from reputation_tracker import ReputationTracker
 
 load_dotenv()
 
@@ -54,6 +55,7 @@ class NightWatchman:
         self.config = Config()
         self.detector = SpamDetector()
         self.analytics = AnalyticsTracker()  # Analytics tracker
+        self.reputation = ReputationTracker()  # Reputation system
         
         # Track chat member join dates
         self.member_join_dates: Dict[str, datetime] = {}  # f"{chat_id}_{user_id}" -> datetime
@@ -63,6 +65,15 @@ class NightWatchman:
         
         # Track bot's own messages for auto-delete
         self.bot_messages: Dict[str, Dict] = {}  # f"{chat_id}_{message_id}" -> message_data
+        
+        # Track monitored groups (for admin verification in DMs)
+        self.monitored_groups: List[int] = []  # list of chat_ids
+        
+        # Track users without usernames (for kick after grace period)
+        self.users_without_username: Dict[str, datetime] = {}  # f"{chat_id}_{user_id}" -> join_time
+        
+        # Track report cooldowns
+        self.report_cooldowns: Dict[int, datetime] = {}  # user_id -> last_report_time
         
         # Get bot's own user ID
         self.bot_user_id = None
@@ -194,22 +205,54 @@ class NightWatchman:
                 return
             
             # Handle /analytics from admins in group (delete command, DM result)
-            if text.startswith('/analytics') and user_id in self.config.ADMIN_USER_IDS:
-                # Delete the command from group to keep it clean
-                await self._delete_message(chat_id, message_id)
-                # Send analytics via DM
-                await self._handle_analytics_command(user_id, user_id, text)
-                return
+            if text.startswith('/analytics'):
+                # Check if user is group admin
+                if await self._is_admin(chat_id, user_id):
+                    # Delete the command from group to keep it clean
+                    await self._delete_message(chat_id, message_id)
+                    # Send analytics via DM
+                    await self._handle_analytics_command(user_id, user_id, text)
+                    return
+            
+            # Handle user commands (everyone can use these)
+            if text.startswith('/'):
+                handled = await self._handle_user_command(chat_id, user_id, user_name, username, text, message)
+                if handled:
+                    return
             
             # Skip messages from admins (don't moderate them)
             if await self._is_admin(chat_id, user_id):
                 return
             
+            # Track this group as monitored
+            if chat_id not in self.monitored_groups:
+                self.monitored_groups.append(chat_id)
+            
             self.stats['messages_checked'] += 1
             
-            # Track message in analytics
+            # Track message in analytics and reputation (daily activity)
             if self.config.ANALYTICS_ENABLED:
                 self.analytics.track_message(user_id, chat_id)
+            if self.config.REPUTATION_ENABLED:
+                self.reputation.track_daily_activity(user_id, username, user_name)
+            
+            # Check for forwarded messages
+            if message.get('forward_date') or message.get('forward_from') or message.get('forward_from_chat'):
+                if self.config.BLOCK_FORWARDS:
+                    # Admins can always forward
+                    if self.config.FORWARD_ALLOW_ADMINS and await self._is_admin(chat_id, user_id):
+                        pass  # Allow
+                    # VIPs can forward
+                    elif self.reputation.can_forward(user_id):
+                        pass  # Allow
+                    else:
+                        # Delete and warn
+                        await self._delete_message(chat_id, message_id)
+                        await self._send_message(
+                            chat_id,
+                            f"⚠️ <b>{user_name}</b>, forwarding messages is not allowed. Build reputation to unlock this feature."
+                        )
+                        return
             
             # Get user join date for new user detection
             member_key = f"{chat_id}_{user_id}"
@@ -307,6 +350,17 @@ class NightWatchman:
                 if self.config.VERIFY_NEW_USERS:
                     await self._verify_new_user(chat_id, user, join_time)
                 
+                # Check username requirement
+                if self.config.REQUIRE_USERNAME:
+                    username = user.get('username', '')
+                    if not username:
+                        member_key = f"{chat_id}_{user_id}"
+                        self.users_without_username[member_key] = join_time
+                        # Mute and warn
+                        await self._mute_user(chat_id, user_id)
+                        await self._send_message(chat_id, self.config.USERNAME_WARNING_MESSAGE)
+                        logger.info(f"⚠️ User {user_id} muted - no username")
+                
                 # Send welcome message
                 if self.config.SEND_WELCOME_MESSAGE:
                     await asyncio.sleep(1)  # Small delay
@@ -342,6 +396,10 @@ class NightWatchman:
         if self.config.AUTO_WARN_USER and result['is_spam']:
             warnings = self.detector.add_warning(user_id)
             self.stats['users_warned'] += 1
+            
+            # Track in reputation
+            if self.config.REPUTATION_ENABLED:
+                self.reputation.on_warning(user_id, username, user_name)
             
             if warnings >= self.config.AUTO_BAN_AFTER_WARNINGS:
                 # Ban the user
@@ -439,6 +497,158 @@ I am a spam detection bot that protects Telegram groups from:
         elif text.startswith('/analytics'):
             # Admin-only analytics command
             await self._handle_analytics_command(chat_id, user_id, text)
+        
+        elif text.startswith('/rep'):
+            # Show user's reputation
+            if self.config.REPUTATION_ENABLED:
+                msg = self.reputation.format_user_rep(user_id)
+                await self._send_message(chat_id, msg, auto_delete=False)
+        
+        elif text.startswith('/leaderboard'):
+            # Show leaderboard
+            if self.config.REPUTATION_ENABLED:
+                msg = self.reputation.format_leaderboard()
+                await self._send_message(chat_id, msg, auto_delete=False)
+        
+        elif text.startswith('/guidelines'):
+            await self._send_message(chat_id, self.config.GUIDELINES_MESSAGE, auto_delete=False)
+        
+        elif text.startswith('/help'):
+            await self._send_message(chat_id, self.config.HELP_MESSAGE, auto_delete=False)
+    
+    async def _handle_user_command(self, chat_id: int, user_id: int, user_name: str, 
+                                   username: str, text: str, message: Dict) -> bool:
+        """
+        Handle user commands (available to everyone in group).
+        Returns True if command was handled.
+        """
+        command = text.split()[0].lower()
+        message_id = message.get('message_id')
+        
+        if command == '/guidelines':
+            await self._send_message(chat_id, self.config.GUIDELINES_MESSAGE)
+            return True
+        
+        elif command == '/help':
+            await self._send_message(chat_id, self.config.HELP_MESSAGE)
+            return True
+        
+        elif command == '/admins':
+            # Tag all admins
+            admins = await self._get_chat_admins(chat_id)
+            if admins:
+                admin_mentions = []
+                for admin in admins:
+                    admin_user = admin.get('user', {})
+                    admin_name = admin_user.get('first_name', 'Admin')
+                    admin_username = admin_user.get('username', '')
+                    if admin_username:
+                        admin_mentions.append(f"@{admin_username}")
+                    else:
+                        admin_mentions.append(f"<a href='tg://user?id={admin_user.get('id')}'>{admin_name}</a>")
+                
+                await self._send_message(
+                    chat_id,
+                    f"🆘 <b>Admins called by {user_name}</b>\n\n" + " ".join(admin_mentions)
+                )
+            return True
+        
+        elif command == '/rep':
+            if self.config.REPUTATION_ENABLED:
+                msg = self.reputation.format_user_rep(user_id, username, user_name)
+                await self._send_message(chat_id, msg)
+            return True
+        
+        elif command == '/leaderboard':
+            if self.config.REPUTATION_ENABLED:
+                msg = self.reputation.format_leaderboard()
+                await self._send_message(chat_id, msg)
+            return True
+        
+        elif command == '/report':
+            if self.config.REPORT_ENABLED:
+                await self._handle_report(chat_id, user_id, user_name, username, message)
+            return True
+        
+        return False  # Command not handled
+    
+    async def _get_chat_admins(self, chat_id: int) -> List[Dict]:
+        """Get list of chat administrators"""
+        try:
+            url = f"https://api.telegram.org/bot{self.token}/getChatAdministrators"
+            params = {'chat_id': chat_id}
+            response = await self.client.get(url, params=params, timeout=10.0)
+            data = response.json()
+            
+            if data.get('ok'):
+                return data.get('result', [])
+        except Exception as e:
+            logger.error(f"Error getting chat admins: {e}")
+        return []
+    
+    async def _handle_report(self, chat_id: int, user_id: int, user_name: str, 
+                            username: str, message: Dict):
+        """Handle /report command"""
+        message_id = message.get('message_id')
+        reply_to = message.get('reply_to_message')
+        
+        # Delete the /report command to keep chat clean
+        await self._delete_message(chat_id, message_id)
+        
+        if not reply_to:
+            await self._send_message(
+                chat_id,
+                f"⚠️ <b>{user_name}</b>, reply to a message with /report to report it."
+            )
+            return
+        
+        # Check cooldown
+        now = datetime.now(timezone.utc)
+        if user_id in self.report_cooldowns:
+            elapsed = (now - self.report_cooldowns[user_id]).total_seconds()
+            if elapsed < self.config.REPORT_COOLDOWN_SECONDS:
+                remaining = int(self.config.REPORT_COOLDOWN_SECONDS - elapsed)
+                await self._send_message(
+                    chat_id,
+                    f"⏳ <b>{user_name}</b>, please wait {remaining}s before reporting again."
+                )
+                return
+        
+        self.report_cooldowns[user_id] = now
+        
+        # Get reported message info
+        reported_user = reply_to.get('from', {})
+        reported_user_id = reported_user.get('id')
+        reported_user_name = reported_user.get('first_name', 'Unknown')
+        reported_username = reported_user.get('username', '')
+        reported_text = reply_to.get('text', '') or reply_to.get('caption', '') or '[Media]'
+        reported_message_id = reply_to.get('message_id')
+        
+        # Send report to admins
+        if self.admin_chat_id:
+            report = f"""🚨 <b>User Report</b>
+
+👤 <b>Reporter:</b> {user_name} (@{username or 'N/A'})
+
+👤 <b>Reported User:</b> {reported_user_name} (@{reported_username or 'N/A'})
+🆔 User ID: <code>{reported_user_id}</code>
+
+📝 <b>Message:</b>
+<code>{reported_text[:500]}</code>
+
+💬 Chat: <code>{chat_id}</code>
+📨 Message ID: <code>{reported_message_id}</code>
+
+<i>Use /ban or /mute to take action</i>"""
+            await self._send_message(self.admin_chat_id, report, auto_delete=False)
+        
+        # Confirm to reporter
+        await self._send_message(
+            chat_id,
+            f"✅ <b>{user_name}</b>, your report has been sent to the admins. Thank you!"
+        )
+        
+        logger.info(f"📢 Report from {user_name}: reported {reported_user_name}")
     
     async def _is_admin(self, chat_id: int, user_id: int) -> bool:
         """Check if user is admin in chat"""
@@ -453,6 +663,18 @@ I am a spam detection bot that protects Telegram groups from:
                 return status in ['creator', 'administrator']
         except Exception as e:
             logger.error(f"Error checking admin status: {e}")
+        return False
+    
+    async def _is_admin_in_any_group(self, user_id: int) -> bool:
+        """Check if user is admin in any monitored group (for DM commands)"""
+        # First check static admin list
+        if user_id in self.config.ADMIN_USER_IDS:
+            return True
+        
+        # Then check each monitored group
+        for chat_id in self.monitored_groups:
+            if await self._is_admin(chat_id, user_id):
+                return True
         return False
     
     async def _delete_message(self, chat_id: int, message_id: int) -> bool:
@@ -530,6 +752,10 @@ I am a spam detection bot that protects Telegram groups from:
             # Warn user and track warnings
             warnings = self.detector.add_warning(user_id)
             self.stats['users_warned'] += 1
+            
+            # Track in reputation
+            if self.config.REPUTATION_ENABLED:
+                self.reputation.on_warning(user_id, username, user_name)
             
             await self._send_message(
                 chat_id,
@@ -721,11 +947,11 @@ I am a spam detection bot that protects Telegram groups from:
     
     async def _handle_analytics_command(self, chat_id: int, user_id: int, text: str):
         """Handle /analytics command - admin only, sent via DM"""
-        # Check if user is an admin
-        if user_id not in self.config.ADMIN_USER_IDS:
+        # Check if user is an admin (in any monitored group or static list)
+        if not await self._is_admin_in_any_group(user_id):
             await self._send_message(
                 chat_id, 
-                "⛔ This command is for admins only.",
+                "⛔ This command is for group admins only.",
                 auto_delete=False
             )
             return

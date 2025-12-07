@@ -9,20 +9,38 @@
 - **Bad language detection** - automatically detects and warns about profanity
 - **Scammer detection** - identifies suspicious accounts on join
 - **Anti-raid protection** - detects coordinated attacks
+- **Forward blocking** - prevents forwarded spam (VIPs exempt)
 - **Auto-delete** spam/bad language messages
 - **Warn/mute/ban** repeat offenders automatically
 
 ### 👥 User Management
 - **New user verification** - checks for suspicious account patterns
 - **New user restrictions** - blocks links/media from users < 24h in group
+- **Username requirement** - mutes users without username, kicks after 24h
 - **Welcome messages** - greets new members with rules
 - **Rate limiting** - detects message floods
 - **Duplicate detection** - catches repeated spam messages
+
+### ⭐ Reputation System
+- **Daily activity points** - +1 point per day active
+- **Valid spam reports** - +10 points for helping moderate
+- **Warning penalties** - -10 points per warning
+- **Level progression**: Newcomer → Member → Trusted → VIP
+- **VIP perks** - Can forward messages, bypass restrictions
 
 ### 🔧 Admin Tools
 - **Admin commands** - `/warn`, `/ban`, `/mute`, `/stats`, `/unwarn`
 - **Admin reports** - sends alerts to your chat
 - **Statistics tracking** - monitor bot activity
+- **Analytics** - detailed group analytics via DM
+
+### 💬 User Commands
+- `/guidelines` - Show community rules
+- `/help` - List available commands
+- `/admins` - Tag all admins for help
+- `/report` - Report a message (reply to message)
+- `/rep` - Check your reputation
+- `/leaderboard` - Top 10 users by reputation
 
 ## Detection Signals
 
@@ -129,6 +147,26 @@ The bot needs these admin permissions in the group:
 - Links blocked for first 24 hours
 - Suspicious accounts can be auto-banned or restricted
 - Anti-raid protection activates if 10+ users join in 5 minutes
+- Username required - users without username are muted
+
+## Reputation System
+
+### Earning Points
+| Action | Points |
+|--------|--------|
+| Daily activity | +1 |
+| Valid spam report | +10 |
+| Warning received | -10 |
+| Muted | -25 |
+| Unmuted (false positive) | +15 |
+
+### Levels
+| Level | Points | Perks |
+|-------|--------|-------|
+| 🆕 Newcomer | 0-50 | Standard restrictions |
+| 🌟 Member | 51-200 | Can post links |
+| ⭐ Trusted | 201-500 | Bypass some restrictions |
+| 💎 VIP | 501+ | Can forward messages |
 
 ---
 
