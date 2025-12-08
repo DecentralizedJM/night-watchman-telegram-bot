@@ -180,6 +180,12 @@ class NightWatchman:
                 chat_id = message.get('chat', {}).get('id')
                 message_id = message.get('message_id')
                 
+                # Track joins in analytics BEFORE deleting the message
+                if self.config.ANALYTICS_ENABLED:
+                    for member in new_members:
+                        self.analytics.track_join(chat_id)
+                        logger.info(f"📊 Tracked join in analytics: chat={chat_id}")
+                
                 # Delete the join message if configured
                 if self.config.DELETE_JOIN_EXIT_MESSAGES:
                     await self._delete_message(chat_id, message_id)
@@ -202,13 +208,15 @@ class NightWatchman:
                 chat_id = message.get('chat', {}).get('id')
                 message_id = message.get('message_id')
                 
+                # Track exit in analytics BEFORE deleting the message
+                if self.config.ANALYTICS_ENABLED:
+                    self.analytics.track_exit(chat_id)
+                    logger.info(f"📊 Tracked exit in analytics: chat={chat_id}")
+                
                 # Delete the exit message if configured
                 if self.config.DELETE_JOIN_EXIT_MESSAGES:
                     await self._delete_message(chat_id, message_id)
                 
-                # Track in analytics
-                if self.config.ANALYTICS_ENABLED:
-                    self.analytics.track_exit(chat_id)
                 return
             
             # Extract message info
@@ -427,10 +435,6 @@ class NightWatchman:
                 member_key = f"{chat_id}_{user_id}"
                 join_time = datetime.now(timezone.utc)
                 self.member_join_dates[member_key] = join_time
-                
-                # Track join in analytics
-                if self.config.ANALYTICS_ENABLED:
-                    self.analytics.track_join(chat_id)
                 
                 # Track for anti-raid
                 if chat_id not in self.recent_joins:
