@@ -6,6 +6,7 @@
 
 ### 🛡️ Core Protection
 - **Real-time spam detection** using multiple signals
+- **CAS integration** - checks users against Combot Anti-Spam database (1M+ groups)
 - **Bad language detection** - automatically detects and warns about profanity
 - **Scammer detection** - identifies suspicious accounts on join
 - **Anti-raid protection** - detects coordinated attacks
@@ -91,6 +92,7 @@ python3 night_watchman.py
 | `/ban` | Ban a user permanently |
 | `/mute` | Mute a user for 24 hours |
 | `/unwarn` | Clear warnings for a user |
+| `/cas` | Check user against CAS anti-spam database |
 | `/stats` | Show detailed bot statistics |
 
 ### Analytics Commands (Admin Only - Private)

@@ -82,7 +82,14 @@
 - **Admin Alerts**: Notifies admins of potential coordinated attacks
 - **Configurable Thresholds**: Adjustable window and user count
 
-### 6. Flood Detection
+### 6. CAS (Combot Anti-Spam) Integration
+- **Global Spam Database**: Checks new members against CAS database
+- **Auto-Ban Known Spammers**: Instantly bans users flagged across 1M+ groups
+- **Manual Checks**: `/cas @user` command to check any user
+- **Admin Notifications**: Reports when CAS-banned users try to join
+- **API**: Uses free public CAS API (api.cas.chat)
+
+### 7. Flood Detection
 - **Message Rate Limiting**: Flags users sending too many messages
 - **Duplicate Detection**: Catches spam floods with same message
 - **Automatic Action**: Warns/mutes based on severity
@@ -134,6 +141,7 @@
 | `/ban` | Ban user permanently | Reply, `/ban @username`, or `/ban <user_id>` |
 | `/mute` | Mute user for 24h | Reply, `/mute @username`, or `/mute <user_id>` |
 | `/unwarn` | Clear user warnings | Reply, `/unwarn @username`, or `/unwarn <user_id>` |
+| `/cas` | Check user against CAS database | Reply, `/cas @username`, or `/cas <user_id>` |
 | `/enhance` | Award +15 reputation points | Reply with `/enhance` (auto-deletes in 1 min) |
 | `/stats` | Show bot statistics | Use `/stats` in group |
 

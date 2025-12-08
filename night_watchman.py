@@ -481,6 +481,47 @@ class NightWatchman:
                         logger.warning(f"🚨 Possible raid detected in {chat_id}: {len(self.recent_joins[chat_id])} users joined")
                         await self._handle_raid(chat_id, len(self.recent_joins[chat_id]))
                 
+                # Check CAS (Combot Anti-Spam) database
+                if self.config.CAS_ENABLED:
+                    cas_result = await self._check_cas(user_id)
+                    if cas_result.get("banned"):
+                        user_name = user.get('first_name', 'Unknown')
+                        username = user.get('username', '')
+                        logger.warning(f"🚫 CAS banned user {user_id} (@{username}) tried to join {chat_id}")
+                        
+                        if self.config.CAS_AUTO_BAN:
+                            banned = await self._ban_user(chat_id, user_id)
+                            if banned:
+                                self.stats['users_banned'] += 1
+                                logger.info(f"🔨 Auto-banned CAS-listed user {user_id}")
+                                
+                                # Report to admin
+                                if self.admin_chat_id:
+                                    report = f"""🚫 <b>CAS Ban - Known Spammer Blocked</b>
+
+👤 User: {user_name} (@{username or 'N/A'})
+🆔 User ID: <code>{user_id}</code>
+💬 Chat: <code>{chat_id}</code>
+⏰ CAS Added: {cas_result.get('time_added', 'Unknown')}
+📋 Offenses: {cas_result.get('reason', 'Unknown')}
+
+✅ <b>Action:</b> Auto-banned on join"""
+                                    await self._send_message(self.admin_chat_id, report)
+                                return  # Don't process further
+                        else:
+                            # Just notify admin, don't auto-ban
+                            if self.admin_chat_id:
+                                report = f"""⚠️ <b>CAS Alert - Known Spammer Joined</b>
+
+👤 User: {user_name} (@{username or 'N/A'})
+🆔 User ID: <code>{user_id}</code>
+💬 Chat: <code>{chat_id}</code>
+⏰ CAS Added: {cas_result.get('time_added', 'Unknown')}
+📋 Offenses: {cas_result.get('reason', 'Unknown')}
+
+⚠️ <b>Note:</b> CAS_AUTO_BAN is disabled. Consider manual action."""
+                                await self._send_message(self.admin_chat_id, report)
+                
                 # Verify new user
                 if self.config.VERIFY_NEW_USERS:
                     await self._verify_new_user(chat_id, user, join_time)
@@ -1237,6 +1278,52 @@ I am a spam detection bot that protects Telegram groups from:
 🔨 Users banned: {self.stats['users_banned']}
 ⚠️ Suspicious users: {self.stats['suspicious_users_detected']}"""
             await self._send_message(chat_id, stats_msg)
+            
+        elif command == '/cas':
+            # CAS (Combot Anti-Spam) check command
+            # Support reply-to-message, @username, or user ID
+            cas_target_id = target_user_id
+            target_name = reply_to.get('from', {}).get('first_name', 'User') if reply_to else None
+            
+            if not cas_target_id:
+                parsed_id, parsed_name = await self._parse_target_from_command(text, message)
+                if parsed_id:
+                    cas_target_id = parsed_id
+                    target_name = parsed_name
+            
+            if cas_target_id:
+                cas_result = await self._check_cas(cas_target_id)
+                
+                if cas_result.get("banned"):
+                    cas_msg = f"""🚫 <b>CAS Check Result</b>
+
+👤 User: <b>{target_name}</b>
+🆔 User ID: <code>{cas_target_id}</code>
+
+⚠️ <b>STATUS: BANNED IN CAS</b>
+⏰ Added: {cas_result.get('time_added', 'Unknown')}
+📋 Offenses: {cas_result.get('reason', 'Unknown')}
+
+🔗 <a href="https://cas.chat/query?u={cas_target_id}">View on CAS</a>"""
+                elif cas_result.get("error"):
+                    cas_msg = f"""⚠️ <b>CAS Check Error</b>
+
+👤 User: <b>{target_name}</b>
+🆔 User ID: <code>{cas_target_id}</code>
+
+❌ Error: {cas_result.get('error')}"""
+                else:
+                    cas_msg = f"""✅ <b>CAS Check Result</b>
+
+👤 User: <b>{target_name}</b>
+🆔 User ID: <code>{cas_target_id}</code>
+
+✅ <b>STATUS: CLEAN</b>
+No CAS ban record found."""
+                
+                await self._send_message(chat_id, cas_msg)
+            else:
+                await self._send_message(chat_id, "⚠️ Usage: Reply to message, /cas @username, or /cas <user_id>")
     
     async def _handle_analytics_command(self, chat_id: int, user_id: int, text: str):
         """Handle /analytics command - admin only, sent via DM"""
@@ -1366,6 +1453,42 @@ I am a spam detection bot that protects Telegram groups from:
 
 🗑️ <b>Action:</b> Deleted and warned"""
                 await self._send_message(self.admin_chat_id, report)
+    
+    async def _check_cas(self, user_id: int) -> Dict:
+        """
+        Check user against CAS (Combot Anti-Spam) database.
+        
+        Returns:
+            dict with keys:
+                - banned: bool (True if user is in CAS)
+                - reason: str (ban reason if available)
+                - time_added: str (when added to CAS)
+        """
+        if not self.config.CAS_ENABLED:
+            return {"banned": False}
+        
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    f"{self.config.CAS_API_URL}?user_id={user_id}"
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("ok") and data.get("result"):
+                        result = data["result"]
+                        return {
+                            "banned": True,
+                            "reason": result.get("offenses", "Unknown"),
+                            "time_added": result.get("time_added", "Unknown"),
+                            "messages": result.get("messages", [])
+                        }
+                
+                return {"banned": False}
+                
+        except Exception as e:
+            logger.error(f"CAS API error: {e}")
+            return {"banned": False, "error": str(e)}
     
     async def _ban_user(self, chat_id: int, user_id: int) -> bool:
         """Ban a user"""

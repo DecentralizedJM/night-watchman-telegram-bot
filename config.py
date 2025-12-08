@@ -115,6 +115,11 @@ class Config:
     RAID_DETECTION_WINDOW_MINUTES = 5  # Check last 5 minutes
     RAID_THRESHOLD_USERS = 10  # If 10+ new users join in window, it's a raid
     
+    # CAS (Combot Anti-Spam) Integration
+    CAS_ENABLED = True  # Check new members against CAS database
+    CAS_AUTO_BAN = True  # Auto-ban users found in CAS database
+    CAS_API_URL = "https://api.cas.chat/check"  # CAS API endpoint
+    
     # Welcome Message
     SEND_WELCOME_MESSAGE = False  # Don't auto-send welcome (users can use /guidelines)
     WELCOME_MESSAGE = """👋 Welcome to the group!
