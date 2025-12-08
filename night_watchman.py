@@ -165,6 +165,9 @@ class NightWatchman:
     async def _handle_update(self, update: Dict):
         """Handle incoming update"""
         try:
+            # Debug: Log ALL incoming updates
+            logger.info(f"🔍 Received update: {update.get('update_id')} - Keys: {list(update.keys())}")
+            
             # Handle new chat members (track join date)
             if 'chat_member' in update:
                 await self._handle_chat_member(update['chat_member'])
@@ -172,11 +175,17 @@ class NightWatchman:
             
             message = update.get('message')
             if not message:
+                logger.info(f"⚠️ Update {update.get('update_id')} has no 'message' key")
                 return
+            
+            # Debug: Log message type
+            msg_type = "text" if message.get('text') else "service" if (message.get('new_chat_members') or message.get('left_chat_member')) else "other"
+            logger.info(f"📨 Message type: {msg_type} - Keys: {list(message.keys())}")
             
             # Handle new_chat_members (when multiple users join)
             new_members = message.get('new_chat_members', [])
             if new_members:
+                logger.info(f"👥 JOIN DETECTED: {len(new_members)} member(s) joined")
                 chat_id = message.get('chat', {}).get('id')
                 message_id = message.get('message_id')
                 
@@ -205,6 +214,7 @@ class NightWatchman:
             # Handle left_chat_member (when someone leaves)
             left_member = message.get('left_chat_member')
             if left_member:
+                logger.info(f"👋 EXIT DETECTED: User {left_member.get('first_name', 'Unknown')} left")
                 chat_id = message.get('chat', {}).get('id')
                 message_id = message.get('message_id')
                 
