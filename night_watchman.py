@@ -1063,37 +1063,102 @@ I am a spam detection bot that protects Telegram groups from:
         else:
             logger.info(f"No reply detected for command: {command}")
         
-        if command == '/warn' and target_user_id:
-            warnings = self.detector.add_warning(target_user_id)
-            self.stats['users_warned'] += 1
-            target_name = reply_to.get('from', {}).get('first_name', 'User')
-            await self._send_message(
-                chat_id,
-                f"⚠️ <b>{target_name}</b> has been warned. "
-                f"Warnings: {warnings}/{self.config.AUTO_MUTE_AFTER_WARNINGS}"
-            )
+        if command == '/warn':
+            # Support both reply-to-message and direct user ID
+            warn_target_id = target_user_id
+            target_name = None
             
-        elif command == '/ban' and target_user_id:
-            banned = await self._ban_user(chat_id, target_user_id)
-            if banned:
-                target_name = reply_to.get('from', {}).get('first_name', 'User')
-                await self._send_message(chat_id, f"🔨 <b>{target_name}</b> has been banned.")
-                self.stats['users_banned'] += 1
-                
-        elif command == '/mute' and target_user_id:
-            muted = await self._mute_user(chat_id, target_user_id)
-            if muted:
-                target_name = reply_to.get('from', {}).get('first_name', 'User')
+            if not warn_target_id and len(parts) > 1:
+                try:
+                    warn_target_id = int(parts[1])
+                    target_name = f"User {warn_target_id}"
+                except ValueError:
+                    await self._send_message(chat_id, "⚠️ Usage: Reply to user's message with /warn OR use /warn <user_id>")
+                    return
+            
+            if warn_target_id:
+                if not target_name:
+                    target_name = reply_to.get('from', {}).get('first_name', 'User')
+                warnings = self.detector.add_warning(warn_target_id)
+                self.stats['users_warned'] += 1
                 await self._send_message(
                     chat_id,
-                    f"🔇 <b>{target_name}</b> has been muted for {self.config.MUTE_DURATION_HOURS}h."
+                    f"⚠️ <b>{target_name}</b> has been warned. "
+                    f"Warnings: {warnings}/{self.config.AUTO_MUTE_AFTER_WARNINGS}"
                 )
-                self.stats['users_muted'] += 1
+            else:
+                await self._send_message(chat_id, "⚠️ Usage: Reply to user's message with /warn OR use /warn <user_id>")
+            
+        elif command == '/ban':
+            # Support both reply-to-message and direct user ID
+            ban_target_id = target_user_id
+            target_name = None
+            
+            if not ban_target_id and len(parts) > 1:
+                try:
+                    ban_target_id = int(parts[1])
+                    target_name = f"User {ban_target_id}"
+                except ValueError:
+                    await self._send_message(chat_id, "⚠️ Usage: Reply to user's message with /ban OR use /ban <user_id>")
+                    return
+            
+            if ban_target_id:
+                if not target_name:
+                    target_name = reply_to.get('from', {}).get('first_name', 'User')
+                banned = await self._ban_user(chat_id, ban_target_id)
+                if banned:
+                    await self._send_message(chat_id, f"🔨 <b>{target_name}</b> has been banned.")
+                    self.stats['users_banned'] += 1
+            else:
+                await self._send_message(chat_id, "⚠️ Usage: Reply to user's message with /ban OR use /ban <user_id>")
                 
-        elif command == '/unwarn' and target_user_id:
-            self.detector.clear_warnings(target_user_id)
-            target_name = reply_to.get('from', {}).get('first_name', 'User')
-            await self._send_message(chat_id, f"✅ Warnings cleared for <b>{target_name}</b>.")
+        elif command == '/mute':
+            # Support both reply-to-message and direct user ID
+            mute_target_id = target_user_id
+            target_name = None
+            
+            if not mute_target_id and len(parts) > 1:
+                try:
+                    mute_target_id = int(parts[1])
+                    target_name = f"User {mute_target_id}"
+                except ValueError:
+                    await self._send_message(chat_id, "⚠️ Usage: Reply to user's message with /mute OR use /mute <user_id>")
+                    return
+            
+            if mute_target_id:
+                if not target_name:
+                    target_name = reply_to.get('from', {}).get('first_name', 'User')
+                muted = await self._mute_user(chat_id, mute_target_id)
+                if muted:
+                    await self._send_message(
+                        chat_id,
+                        f"🔇 <b>{target_name}</b> has been muted for {self.config.MUTE_DURATION_HOURS}h."
+                    )
+                    self.stats['users_muted'] += 1
+            else:
+                await self._send_message(chat_id, "⚠️ Usage: Reply to user's message with /mute OR use /mute <user_id>")
+                
+        elif command == '/unwarn':
+            # Support both reply-to-message and direct user ID
+            unwarn_target_id = target_user_id
+            target_name = None
+            
+            # If no reply, check for user ID in command
+            if not unwarn_target_id and len(parts) > 1:
+                try:
+                    unwarn_target_id = int(parts[1])
+                    target_name = f"User {unwarn_target_id}"
+                except ValueError:
+                    await self._send_message(chat_id, "⚠️ Usage: Reply to user's message with /unwarn OR use /unwarn <user_id>")
+                    return
+            
+            if unwarn_target_id:
+                if not target_name:
+                    target_name = reply_to.get('from', {}).get('first_name', 'User')
+                self.detector.clear_warnings(unwarn_target_id)
+                await self._send_message(chat_id, f"✅ Warnings cleared for <b>{target_name}</b>.")
+            else:
+                await self._send_message(chat_id, "⚠️ Usage: Reply to user's message with /unwarn OR use /unwarn <user_id>")
             
         elif command == '/enhance' and target_user_id:
             logger.info(f"💎 /enhance command received from admin {user_id} for target {target_user_id}")

@@ -127,15 +127,17 @@
 
 ## 🔧 Admin Commands
 
-### In-Group Commands (Reply to User)
+### In-Group Commands (Reply to User OR User ID)
 | Command | Description | Usage |
 |---------|-------------|-------|
-| `/warn` | Warn a user | Reply to their message with `/warn` |
-| `/ban` | Ban user permanently | Reply with `/ban` |
-| `/mute` | Mute user for 24h | Reply with `/mute` |
-| `/unwarn` | Clear user warnings | Reply with `/unwarn` |
+| `/warn` | Warn a user | Reply to message with `/warn` OR `/warn <user_id>` |
+| `/ban` | Ban user permanently | Reply with `/ban` OR `/ban <user_id>` |
+| `/mute` | Mute user for 24h | Reply with `/mute` OR `/mute <user_id>` |
+| `/unwarn` | Clear user warnings | Reply with `/unwarn` OR `/unwarn <user_id>` |
 | `/enhance` | Award +15 reputation points | Reply with `/enhance` (auto-deletes in 1 min) |
 | `/stats` | Show bot statistics | Use `/stats` in group |
+
+> **Note**: User ID can be found in bot notifications when a user is warned/muted. Useful when the original message was deleted.
 
 ### Private Chat Commands
 | Command | Description |
