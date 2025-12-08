@@ -141,7 +141,7 @@ class NightWatchman:
                 params = {
                     'offset': self.offset,
                     'timeout': 30,
-                    'allowed_updates': ['message', 'chat_member']
+                    'allowed_updates': ['message', 'edited_message', 'chat_member', 'my_chat_member']
                 }
                 
                 response = await self.client.get(url, params=params, timeout=35.0)
@@ -172,6 +172,12 @@ class NightWatchman:
             if 'chat_member' in update:
                 logger.info(f"📋 Received chat_member update")
                 await self._handle_chat_member(update['chat_member'])
+                return
+            
+            # Handle my_chat_member updates (bot's own status changes)
+            if 'my_chat_member' in update:
+                logger.info(f"📋 Received my_chat_member update (bot status change)")
+                # Don't track bot's own joins/exits
                 return
             
             message = update.get('message')
