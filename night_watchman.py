@@ -1057,28 +1057,60 @@ I am a spam detection bot that protects Telegram groups from:
         # Reply to message commands
         reply_to = message.get('reply_to_message')
         target_user_id = None
+        target_name = None
+        
         if reply_to:
             target_user_id = reply_to.get('from', {}).get('id')
+            target_name = reply_to.get('from', {}).get('first_name', 'User')
             logger.info(f"Reply detected: target_user_id={target_user_id}")
-        else:
-            logger.info(f"No reply detected for command: {command}")
+        
+        # Check for mention in message entities (handles @username)
+        if not target_user_id:
+            entities = message.get('entities', [])
+            for entity in entities:
+                if entity.get('type') == 'text_mention':
+                    # Direct user mention with user object
+                    mentioned_user = entity.get('user', {})
+                    target_user_id = mentioned_user.get('id')
+                    target_name = mentioned_user.get('first_name', 'User')
+                    logger.info(f"Text mention detected: target_user_id={target_user_id}")
+                    break
+                elif entity.get('type') == 'mention':
+                    # @username mention - extract username from text
+                    offset = entity.get('offset', 0)
+                    length = entity.get('length', 0)
+                    mentioned_username = text[offset:offset+length].lstrip('@')
+                    target_name = f"@{mentioned_username}"
+                    logger.info(f"Username mention detected: {target_name}")
+                    # We have username but not user_id - will need to handle differently
+                    break
+        
+        # Check for user_id passed as argument (if still no target)
+        if not target_user_id and len(parts) > 1:
+            arg = parts[1].lstrip('@')
+            try:
+                target_user_id = int(arg)
+                if not target_name:
+                    target_name = f"User {target_user_id}"
+            except ValueError:
+                # It's a username without @ or with @ but not in entities
+                if not target_name:
+                    target_name = f"@{arg}"
+                # Can't resolve username to ID without API call
+                pass
         
         if command == '/warn':
-            # Support both reply-to-message and direct user ID
+            # Support reply-to-message, @username, or user ID
             warn_target_id = target_user_id
-            target_name = None
+            target_name = reply_to.get('from', {}).get('first_name', 'User') if reply_to else None
             
-            if not warn_target_id and len(parts) > 1:
-                try:
-                    warn_target_id = int(parts[1])
-                    target_name = f"User {warn_target_id}"
-                except ValueError:
-                    await self._send_message(chat_id, "⚠️ Usage: Reply to user's message with /warn OR use /warn <user_id>")
-                    return
+            if not warn_target_id:
+                parsed_id, parsed_name = await self._parse_target_from_command(text, message)
+                if parsed_id:
+                    warn_target_id = parsed_id
+                    target_name = parsed_name
             
             if warn_target_id:
-                if not target_name:
-                    target_name = reply_to.get('from', {}).get('first_name', 'User')
                 warnings = self.detector.add_warning(warn_target_id)
                 self.stats['users_warned'] += 1
                 await self._send_message(
@@ -1087,47 +1119,39 @@ I am a spam detection bot that protects Telegram groups from:
                     f"Warnings: {warnings}/{self.config.AUTO_MUTE_AFTER_WARNINGS}"
                 )
             else:
-                await self._send_message(chat_id, "⚠️ Usage: Reply to user's message with /warn OR use /warn <user_id>")
+                await self._send_message(chat_id, "⚠️ Usage: Reply to message, /warn @username, or /warn <user_id>")
             
         elif command == '/ban':
-            # Support both reply-to-message and direct user ID
+            # Support reply-to-message, @username, or user ID
             ban_target_id = target_user_id
-            target_name = None
+            target_name = reply_to.get('from', {}).get('first_name', 'User') if reply_to else None
             
-            if not ban_target_id and len(parts) > 1:
-                try:
-                    ban_target_id = int(parts[1])
-                    target_name = f"User {ban_target_id}"
-                except ValueError:
-                    await self._send_message(chat_id, "⚠️ Usage: Reply to user's message with /ban OR use /ban <user_id>")
-                    return
+            if not ban_target_id:
+                parsed_id, parsed_name = await self._parse_target_from_command(text, message)
+                if parsed_id:
+                    ban_target_id = parsed_id
+                    target_name = parsed_name
             
             if ban_target_id:
-                if not target_name:
-                    target_name = reply_to.get('from', {}).get('first_name', 'User')
                 banned = await self._ban_user(chat_id, ban_target_id)
                 if banned:
                     await self._send_message(chat_id, f"🔨 <b>{target_name}</b> has been banned.")
                     self.stats['users_banned'] += 1
             else:
-                await self._send_message(chat_id, "⚠️ Usage: Reply to user's message with /ban OR use /ban <user_id>")
+                await self._send_message(chat_id, "⚠️ Usage: Reply to message, /ban @username, or /ban <user_id>")
                 
         elif command == '/mute':
-            # Support both reply-to-message and direct user ID
+            # Support reply-to-message, @username, or user ID
             mute_target_id = target_user_id
-            target_name = None
+            target_name = reply_to.get('from', {}).get('first_name', 'User') if reply_to else None
             
-            if not mute_target_id and len(parts) > 1:
-                try:
-                    mute_target_id = int(parts[1])
-                    target_name = f"User {mute_target_id}"
-                except ValueError:
-                    await self._send_message(chat_id, "⚠️ Usage: Reply to user's message with /mute OR use /mute <user_id>")
-                    return
+            if not mute_target_id:
+                parsed_id, parsed_name = await self._parse_target_from_command(text, message)
+                if parsed_id:
+                    mute_target_id = parsed_id
+                    target_name = parsed_name
             
             if mute_target_id:
-                if not target_name:
-                    target_name = reply_to.get('from', {}).get('first_name', 'User')
                 muted = await self._mute_user(chat_id, mute_target_id)
                 if muted:
                     await self._send_message(
@@ -1136,29 +1160,24 @@ I am a spam detection bot that protects Telegram groups from:
                     )
                     self.stats['users_muted'] += 1
             else:
-                await self._send_message(chat_id, "⚠️ Usage: Reply to user's message with /mute OR use /mute <user_id>")
+                await self._send_message(chat_id, "⚠️ Usage: Reply to message, /mute @username, or /mute <user_id>")
                 
         elif command == '/unwarn':
-            # Support both reply-to-message and direct user ID
+            # Support reply-to-message, @username, or user ID
             unwarn_target_id = target_user_id
-            target_name = None
+            target_name = reply_to.get('from', {}).get('first_name', 'User') if reply_to else None
             
-            # If no reply, check for user ID in command
-            if not unwarn_target_id and len(parts) > 1:
-                try:
-                    unwarn_target_id = int(parts[1])
-                    target_name = f"User {unwarn_target_id}"
-                except ValueError:
-                    await self._send_message(chat_id, "⚠️ Usage: Reply to user's message with /unwarn OR use /unwarn <user_id>")
-                    return
+            if not unwarn_target_id:
+                parsed_id, parsed_name = await self._parse_target_from_command(text, message)
+                if parsed_id:
+                    unwarn_target_id = parsed_id
+                    target_name = parsed_name
             
             if unwarn_target_id:
-                if not target_name:
-                    target_name = reply_to.get('from', {}).get('first_name', 'User')
                 self.detector.clear_warnings(unwarn_target_id)
                 await self._send_message(chat_id, f"✅ Warnings cleared for <b>{target_name}</b>.")
             else:
-                await self._send_message(chat_id, "⚠️ Usage: Reply to user's message with /unwarn OR use /unwarn <user_id>")
+                await self._send_message(chat_id, "⚠️ Usage: Reply to message, /unwarn @username, or /unwarn <user_id>")
             
         elif command == '/enhance' and target_user_id:
             logger.info(f"💎 /enhance command received from admin {user_id} for target {target_user_id}")

@@ -127,17 +127,17 @@
 
 ## 🔧 Admin Commands
 
-### In-Group Commands (Reply to User OR User ID)
+### In-Group Commands (Reply to User, @username, or User ID)
 | Command | Description | Usage |
 |---------|-------------|-------|
-| `/warn` | Warn a user | Reply to message with `/warn` OR `/warn <user_id>` |
-| `/ban` | Ban user permanently | Reply with `/ban` OR `/ban <user_id>` |
-| `/mute` | Mute user for 24h | Reply with `/mute` OR `/mute <user_id>` |
-| `/unwarn` | Clear user warnings | Reply with `/unwarn` OR `/unwarn <user_id>` |
+| `/warn` | Warn a user | Reply to message, `/warn @username`, or `/warn <user_id>` |
+| `/ban` | Ban user permanently | Reply, `/ban @username`, or `/ban <user_id>` |
+| `/mute` | Mute user for 24h | Reply, `/mute @username`, or `/mute <user_id>` |
+| `/unwarn` | Clear user warnings | Reply, `/unwarn @username`, or `/unwarn <user_id>` |
 | `/enhance` | Award +15 reputation points | Reply with `/enhance` (auto-deletes in 1 min) |
 | `/stats` | Show bot statistics | Use `/stats` in group |
 
-> **Note**: User ID can be found in bot notifications when a user is warned/muted. Useful when the original message was deleted.
+> **Note**: When using `@username`, the user must be mentioned (Telegram will auto-complete). User ID can be found in bot notifications when a user is warned/muted. Useful when the original message was deleted.
 
 ### Private Chat Commands
 | Command | Description |

@@ -84,10 +84,10 @@ python3 night_watchman.py
 | `/start` | Welcome message |
 | `/stats` | Show bot statistics |
 
-### Admin Commands (In Group - Reply to User)
+### Admin Commands (In Group - Reply, @username, or User ID)
 | Command | Description |
 |---------|-------------|
-| `/warn` | Warn a user (reply to their message) |
+| `/warn` | Warn a user (reply, `/warn @user`, or `/warn <id>`) |
 | `/ban` | Ban a user permanently |
 | `/mute` | Mute a user for 24 hours |
 | `/unwarn` | Clear warnings for a user |
