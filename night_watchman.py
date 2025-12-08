@@ -165,34 +165,23 @@ class NightWatchman:
     async def _handle_update(self, update: Dict):
         """Handle incoming update"""
         try:
-            # Debug: Log ALL incoming updates
-            logger.info(f"🔍 Received update: {update.get('update_id')} - Keys: {list(update.keys())}")
-            
             # Handle chat_member updates (used by forum/topic groups)
             if 'chat_member' in update:
-                logger.info(f"📋 Received chat_member update")
                 await self._handle_chat_member(update['chat_member'])
                 return
             
             # Handle my_chat_member updates (bot's own status changes)
             if 'my_chat_member' in update:
-                logger.info(f"📋 Received my_chat_member update (bot status change)")
                 # Don't track bot's own joins/exits
                 return
             
             message = update.get('message')
             if not message:
-                logger.info(f"⚠️ Update {update.get('update_id')} has no 'message' key")
                 return
-            
-            # Debug: Log message type
-            msg_type = "text" if message.get('text') else "service" if (message.get('new_chat_members') or message.get('left_chat_member')) else "other"
-            logger.info(f"📨 Message type: {msg_type} - Keys: {list(message.keys())}")
             
             # Handle new_chat_members (when multiple users join)
             new_members = message.get('new_chat_members', [])
             if new_members:
-                logger.info(f"👥 JOIN DETECTED: {len(new_members)} member(s) joined")
                 chat_id = message.get('chat', {}).get('id')
                 message_id = message.get('message_id')
                 
@@ -202,9 +191,6 @@ class NightWatchman:
                         # Skip bots - don't track them in analytics
                         if not member.get('is_bot', False):
                             self.analytics.track_join(chat_id)
-                            logger.info(f"📊 Tracked join in analytics: user={member.get('first_name', 'Unknown')} chat={chat_id}")
-                        else:
-                            logger.info(f"⚠️ Skipped bot join: {member.get('first_name', 'Bot')}")
                 
                 # Delete the join message if configured
                 if self.config.DELETE_JOIN_EXIT_MESSAGES:
@@ -227,7 +213,6 @@ class NightWatchman:
             if left_member:
                 # Skip bots leaving
                 if left_member.get('is_bot', False):
-                    logger.info(f"⚠️ Bot left (not tracked): {left_member.get('first_name', 'Bot')}")
                     # Still delete the message if configured
                     if self.config.DELETE_JOIN_EXIT_MESSAGES:
                         chat_id = message.get('chat', {}).get('id')
@@ -235,7 +220,6 @@ class NightWatchman:
                         await self._delete_message(chat_id, message_id)
                     return
                 
-                logger.info(f"👋 EXIT DETECTED: User {left_member.get('first_name', 'Unknown')} left")
                 chat_id = message.get('chat', {}).get('id')
                 message_id = message.get('message_id')
                 
@@ -464,21 +448,15 @@ class NightWatchman:
             old_status = old_member.get('status', '')
             is_bot = user.get('is_bot', False)
             
-            logger.info(f"🔄 Chat member update: user={user.get('first_name', 'Unknown')} old={old_status} new={new_status} is_bot={is_bot}")
-            
             # Skip bots
             if is_bot:
-                logger.info(f"⚠️ Skipping bot in chat_member: {user.get('first_name', 'Bot')}")
                 return
             
             # Detect JOIN: user was not a member, now is a member
             if new_status == 'member' and old_status in ['', 'left', 'kicked', 'restricted']:
-                logger.info(f"👥 MEMBER JOINED via chat_member: {user.get('first_name', 'Unknown')}")
-                
                 # Track in analytics
                 if self.config.ANALYTICS_ENABLED:
                     self.analytics.track_join(chat_id)
-                    logger.info(f"📊 Tracked join in analytics (chat_member): chat={chat_id}")
                 
                 # User just joined
                 member_key = f"{chat_id}_{user_id}"
@@ -525,11 +503,9 @@ class NightWatchman:
             
             # Detect LEAVE: user was a member, now left/kicked
             elif new_status in ['left', 'kicked']:
-                logger.info(f"👋 MEMBER LEFT via chat_member: {user.get('first_name', 'Unknown')}")
                 # User left or was kicked
                 if self.config.ANALYTICS_ENABLED:
                     self.analytics.track_exit(chat_id)
-                    logger.info(f"📊 Tracked exit in analytics (chat_member): chat={chat_id}")
                     
         except Exception as e:
             logger.error(f"Error tracking chat member: {e}")

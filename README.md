@@ -103,12 +103,13 @@ python3 night_watchman.py
 | `/analytics week` | Same as 7d |
 | `/analytics month` | Same as 30d |
 
-> **Note:** Analytics commands can be used in the group (command is deleted, results sent via DM) or in private chat with the bot.
+> **Note:** Analytics commands can be used by any group admin (command is deleted, results sent via DM) or in private chat with the bot.
 
 ## Analytics Features
 
 📊 **What's tracked:**
-- 👥 Member joins/exits per day
+- 🆕 New Active Members (first-time message senders)
+- 👤 Total Known Users (all users who ever messaged)
 - 💬 Total messages per day
 - 🚫 Spam blocked per day
 - 🤬 Bad language detected
@@ -119,11 +120,14 @@ python3 night_watchman.py
 - 👤 Active users per day
 - ⏰ Peak activity hours
 
+> **Note:** For groups with hidden member lists, Telegram doesn't send join/exit notifications. Instead, we track "New Active Members" - users who send their first message.
+
 ## Required Bot Permissions
 
 The bot needs these admin permissions in the group:
 - Delete messages
 - Restrict members (for muting)
+- Add members (to receive member join/leave events)
 
 ## Auto-Moderation Actions
 

@@ -157,8 +157,8 @@
 
 ### Tracked Metrics
 - **Member Activity**:
-  - Joins per day
-  - Exits per day
+  - New Active Members (first-time message senders)
+  - Total Known Users (all users who ever messaged)
   - Active users per day
   
 - **Message Activity**:
@@ -178,6 +178,8 @@
   - Daily trends
   - Weekly/monthly summaries
 
+> **Note**: For groups with hidden member lists, Telegram doesn't send join/exit notifications to bots. Instead, we track "New Active Members" - users who send their first message in the group. This is more useful as it tracks engaged members, not just people who joined and lurked.
+
 ### Data Storage
 - **File**: `data/analytics.json`
 - **Retention**: 90 days (configurable)
@@ -187,7 +189,7 @@
 - **Timeframe Options**: today, 7d, 14d, 30d, week, month
 - **Peak Hours**: Shows top 3 busiest hours for weekly reports
 - **Private Delivery**: Results sent via DM (command deleted from group)
-- **Admin Only**: Restricted to users in `ADMIN_USER_IDS`
+- **All Admins**: Any group admin can use `/analytics` (not just ADMIN_USER_IDS)
 
 ---
 
