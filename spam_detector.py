@@ -31,8 +31,32 @@ class SpamDetector:
         # Track forward violations for repeat detection
         self.forward_violators: Dict[int, int] = {}  # user_id -> violation_count
         
+        # Cyrillic to ASCII lookalike mapping (for detecting obfuscation)
+        self.cyrillic_to_ascii = {
+            'а': 'a', 'А': 'A',
+            'в': 'b', 'В': 'B', 
+            'с': 'c', 'С': 'C',
+            'е': 'e', 'Е': 'E',
+            'н': 'h', 'Н': 'H',
+            'і': 'i', 'І': 'I',
+            'к': 'k', 'К': 'K',
+            'м': 'm', 'М': 'M',
+            'о': 'o', 'О': 'O',
+            'р': 'p', 'Р': 'P',
+            'т': 't', 'Т': 'T',
+            'у': 'y', 'У': 'Y',
+            'х': 'x', 'Х': 'X',
+        }
+        
         # Compile regex patterns
         self._compile_patterns()
+    
+    def _normalize_text(self, text: str) -> str:
+        """Normalize text by replacing Cyrillic lookalikes with ASCII equivalents."""
+        normalized = text
+        for cyrillic, ascii_char in self.cyrillic_to_ascii.items():
+            normalized = normalized.replace(cyrillic, ascii_char)
+        return normalized
     
     def _compile_patterns(self):
         """Compile regex patterns for efficient matching"""
@@ -206,8 +230,13 @@ class SpamDetector:
         """
         result = {'instant_ban': False, 'reasons': [], 'triggers': []}
         
+        # Normalize text to detect Cyrillic obfuscation (х→x, р→p, о→o, etc.)
+        message_deobfuscated = self._normalize_text(message)
+        message_deobfuscated_lower = message_deobfuscated.lower()
+        
         # 1. Adult/Porn content (obfuscated or not)
-        if self.adult_patterns.search(message):
+        # Check both original and deobfuscated versions
+        if self.adult_patterns.search(message) or self.adult_patterns.search(message_deobfuscated):
             result['instant_ban'] = True
             result['reasons'].append("Adult/porn content detected")
             result['triggers'].append("adult_content")
@@ -224,7 +253,7 @@ class SpamDetector:
         casino_keywords = ['1win', 'casino', 'promo code', 'welcome bonus', 'big wins', 
                           'jackpot', 'free spins', 'betting', 'slot machine']
         for keyword in casino_keywords:
-            if keyword in message_lower:
+            if keyword in message_lower or keyword in message_deobfuscated_lower:
                 result['instant_ban'] = True
                 result['reasons'].append(f"Casino/betting spam detected: {keyword}")
                 result['triggers'].append("casino_spam")
