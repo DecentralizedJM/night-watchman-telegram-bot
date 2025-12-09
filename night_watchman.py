@@ -97,6 +97,49 @@ class NightWatchman:
             'start_time': datetime.now(timezone.utc)
         }
         
+        # Cool ban messages for different scenarios
+        self.ban_messages = {
+            'spam': [
+                "🚫 Bye bye, {name}! No spam allowed here.",
+                "👋 Another spammer bites the dust. {name} is out!",
+                "🎯 Caught red-handed! {name} has been yeeted.",
+                "🛡️ Spam detected, spammer ejected. {name} is gone!",
+            ],
+            'scammer': [
+                "🚨 Scammer alert! {name} tried it. Banned! 💀",
+                "🔥 Nice try, {name}. Scammers get the boot!",
+                "⚡ {name} thought they could scam here. Wrong group, buddy!",
+                "🎭 Unmasked and banned: {name} was a scammer.",
+            ],
+            'adult': [
+                "🔞 Nope! {name} is out for adult content.",
+                "🚫 Keep it clean! {name} has been banned.",
+                "👎 {name} posted inappropriate content. Goodbye!",
+            ],
+            'forward': [
+                "📤 No forwards allowed! {name} didn't listen. Banned!",
+                "🔄 {name} kept forwarding spam. Time to go!",
+            ],
+            'bot': [
+                "🤖 Kicking out this bot. {name} is banned!",
+                "🚫 Bots aren't welcome here. {name} is out!",
+                "⚡ Bot detected and ejected: {name}",
+            ],
+            'casino': [
+                "🎰 {name} tried promoting gambling. Nice try, banned!",
+                "💸 Casino spam = instant ban. Bye {name}!",
+            ],
+            'promo': [
+                "📢 {name} spammed promos. Not here! Banned.",
+                "🚫 Promotional spam detected. {name} is out!",
+            ],
+            'default': [
+                "🔨 {name} has been banned.",
+                "👋 Goodbye {name}! Rule breakers get the boot.",
+                "⛔ {name} is no longer welcome here.",
+            ]
+        }
+        
         self.running = True
         self.offset = 0
         self.client = httpx.AsyncClient(
@@ -105,6 +148,20 @@ class NightWatchman:
         )
         
         logger.info("🌙 Night Watchman initialized")
+    
+    def _get_ban_message(self, name: str, username: str = None, category: str = 'default') -> str:
+        """Get a cool random ban message for the given category."""
+        import random
+        messages = self.ban_messages.get(category, self.ban_messages['default'])
+        template = random.choice(messages)
+        
+        # Format name with username if available
+        if username:
+            display_name = f"<b>{name}</b> (@{username})"
+        else:
+            display_name = f"<b>{name}</b>"
+        
+        return template.format(name=display_name)
     
     async def start(self):
         """Start the bot"""
@@ -327,15 +384,13 @@ class NightWatchman:
                                 banned = await self._ban_user(chat_id, user_id)
                                 if banned:
                                     self.stats['users_banned'] += 1
-                                    await self._send_message(
-                                        chat_id,
-                                        f"🔨 <b>{user_name}</b> has been banned for repeated forward violations."
-                                    )
+                                    ban_msg = self._get_ban_message(user_name, username, 'forward')
+                                    await self._send_message(chat_id, ban_msg)
                                     # Report to admin
                                     if self.admin_chat_id:
                                         await self._send_message(
                                             self.admin_chat_id,
-                                            f"🔨 <b>Forward Ban</b>\n\n"
+                                            f"� <b>Forward Spam Ban</b>\n\n"
                                             f"👤 User: {user_name} (@{username or 'N/A'})\n"
                                             f"🆔 ID: <code>{user_id}</code>\n"
                                             f"⚠️ Violations: {violations}\n"
@@ -350,7 +405,7 @@ class NightWatchman:
                                 self.stats['users_muted'] += 1
                                 await self._send_message(
                                     chat_id,
-                                    f"🔇 <b>{user_name}</b> has been muted for 24h. Forwarding is not allowed. "
+                                    f"🔇 <b>{user_name}</b> muted for 24h — no forwarding allowed! Next time = ban ⚠️"
                                     f"Next violation will result in a ban."
                                 )
                         else:
@@ -514,6 +569,8 @@ class NightWatchman:
                 banned = await self._ban_user(chat_id, user_id)
                 if banned:
                     self.stats['users_banned'] += 1
+                    ban_msg = self._get_ban_message(user_name, username, 'bot')
+                    await self._send_message(chat_id, ban_msg)
                     if self.admin_chat_id:
                         await self._send_message(
                             self.admin_chat_id,
@@ -534,6 +591,8 @@ class NightWatchman:
                         banned = await self._ban_user(chat_id, user_id)
                         if banned:
                             self.stats['users_banned'] += 1
+                            ban_msg = self._get_ban_message(user_name, username, 'bot')
+                            await self._send_message(chat_id, ban_msg)
                             if self.admin_chat_id:
                                 await self._send_message(
                                     self.admin_chat_id,
@@ -682,10 +741,8 @@ class NightWatchman:
                 if banned:
                     self.stats['users_banned'] += 1
                     logger.info(f"🔨 Banned user {user_name} ({warnings} warnings)")
-                    await self._send_message(
-                        chat_id,
-                        f"🔨 <b>{user_name}</b> has been banned due to repeated spam violations."
-                    )
+                    ban_msg = self._get_ban_message(user_name, username, 'spam')
+                    await self._send_message(chat_id, ban_msg)
             elif warnings >= self.config.AUTO_MUTE_AFTER_WARNINGS:
                 # Mute the user
                 muted = await self._mute_user(chat_id, user_id)
@@ -1507,17 +1564,25 @@ No CAS ban record found."""
         await self._delete_message(chat_id, message_id)
         self.stats['messages_deleted'] += 1
         
+        # Determine ban category for cool message
+        ban_category = 'scammer'  # default
+        if 'adult_content' in triggers:
+            ban_category = 'adult'
+        elif 'casino_spam' in triggers:
+            ban_category = 'casino'
+        elif 'promo_spam' in triggers or 'emoji_promo_spam' in triggers:
+            ban_category = 'promo'
+        elif 'telegram_bot_link' in triggers:
+            ban_category = 'bot'
+        
         # Ban immediately
         banned = await self._ban_user(chat_id, user_id)
         if banned:
             self.stats['users_banned'] += 1
             
-            # Notify in group
-            await self._send_message(
-                chat_id,
-                f"🔨 <b>{user_name}</b> has been banned.\n"
-                f"📋 Reason: {', '.join(reasons)}"
-            )
+            # Cool ban message
+            ban_msg = self._get_ban_message(user_name, username, ban_category)
+            await self._send_message(chat_id, ban_msg)
             
             # Report to admin
             if self.admin_chat_id:
@@ -1556,10 +1621,8 @@ No CAS ban record found."""
             if banned:
                 self.stats['users_banned'] += 1
                 logger.info(f"🔨 Banned {user_name} for non-Indian language spam with links")
-                await self._send_message(
-                    chat_id,
-                    f"🔨 <b>{user_name}</b> has been banned for posting suspicious content in non-Indian language ({detected_lang}) with links."
-                )
+                ban_msg = self._get_ban_message(user_name, username, 'scammer')
+                await self._send_message(chat_id, ban_msg)
                 
                 # Report to admin
                 if self.admin_chat_id:
@@ -1579,7 +1642,7 @@ No CAS ban record found."""
             # Just delete and warn for non-URL foreign language messages
             await self._send_message(
                 chat_id,
-                f"⚠️ <b>{user_name}</b>, please use English or Indian languages in this group. Message deleted."
+                f"⚠️ <b>{user_name}</b>, please use English or Indian languages. Message deleted."
             )
             
             # Report to admin (informational)

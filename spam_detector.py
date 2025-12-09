@@ -278,18 +278,30 @@ class SpamDetector:
                     result['triggers'].append("instant_ban_keyword")
                     return result
         
-        # 6. Emoji-heavy messages with links (obfuscation pattern)
-        emoji_count = len(re.findall(r'[\U0001F300-\U0001F9FF]', message))
+        # 6. Excessive emoji spam detection (promotional style)
+        emoji_count = len(re.findall(r'[\U0001F300-\U0001F9FF\U00002600-\U000027BF\U0001F100-\U0001F1FF]', message))
+        special_chars = len(re.findall(r'[▫▪🔠🅰➡⬅✔💪⚡😆🍬💙🤍❤💜💋😈👩🔥✅❌⭐🎰🎲💰💵💎🏆🥇]', message))
+        total_decorative = emoji_count + special_chars
         has_links = bool(self.url_pattern.search(message))
-        if emoji_count > 10 and has_links:
-            # Check for promotional keywords
-            promo_keywords = ['right here', 'click', 'join', 'bonus', 'win', 'free']
-            for keyword in promo_keywords:
-                if keyword in message_lower:
-                    result['instant_ban'] = True
-                    result['reasons'].append("Emoji-obfuscated spam with links")
-                    result['triggers'].append("emoji_obfuscation")
-                    return result
+        
+        # Promo-style messages: lots of emojis + links = instant ban
+        if total_decorative > 8 and has_links:
+            result['instant_ban'] = True
+            result['reasons'].append("Promotional spam (excessive emojis + links)")
+            result['triggers'].append("promo_spam")
+            return result
+        
+        # Even without links, excessive promotional patterns get banned
+        if total_decorative > 15:
+            promo_keywords = ['right here', 'click', 'join', 'bonus', 'win', 'free', 
+                             'ready', 'launch', 'promo', 'code', 'new players', 'get a',
+                             'start', 'cash', 'today', 'now', 'hot', 'big']
+            promo_matches = sum(1 for kw in promo_keywords if kw in message_lower)
+            if promo_matches >= 2:
+                result['instant_ban'] = True
+                result['reasons'].append("Promotional spam (emoji overload + promo keywords)")
+                result['triggers'].append("emoji_promo_spam")
+                return result
         
         return result
     
