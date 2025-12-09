@@ -2,6 +2,14 @@
 
 24/7 Telegram watchdog & moderation bot. Protects your groups from spam, scams, bad language, and more.
 
+**Latest Release:** v1.1.1 (December 9, 2025) - 🛡️ Aggressive Anti-Spam Overhaul
+- Fixed all 6 reported scammer detection failures
+- Cyrillic character deobfuscation for porn spam
+- Instant-ban system for zero-tolerance violations
+- Forward violation tracking with escalating penalties
+- Bot account blocking
+- Cool sassy ban message templates
+
 ## Features
 
 ### 🛡️ Core Protection
@@ -42,6 +50,27 @@
 - `/report` - Report a message (reply to message)
 - `/rep` - Check your reputation
 - `/leaderboard` - Top 10 users by reputation
+
+## 🚀 Recent Updates (v1.1.1)
+
+### 🎯 Fixed All 6 Scammer Detection Failures
+1. **Cyrillic-obfuscated porn** - Deobfuscates Cyrillic lookalikes (х→x, р→p, о→o)
+2. **Aggressive DM solicitation** - Detects "DM me now", "inbox me"
+3. **Emoji-obfuscated links** - Flags excessive emojis + bot links
+4. **Bot account joins** - Blocks accounts by is_bot flag + username patterns
+5. **Casino/betting promo** - Instant bans on 1win, casino keywords
+6. **Forwarded spam** - Mutes on first, bans on repeat
+
+### 💥 Instant-Ban System
+Zero-tolerance violations trigger immediate permanent ban:
+- Adult/porn content (normalized for obfuscation)
+- Telegram bot links (t.me/botname)
+- DM solicitation phrases
+- Casino & betting scams
+- Excessive emoji spam combinations
+
+### 🎭 Cool Ban Messages
+Bot now responds with entertaining ban notifications across 8 categories with sassy responses.
 
 ## Detection Signals
 
