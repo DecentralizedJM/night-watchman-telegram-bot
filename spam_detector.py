@@ -28,6 +28,9 @@ class SpamDetector:
         # Track warnings per user
         self.user_warnings: Dict[int, int] = {}
         
+        # Track forward violations for repeat detection
+        self.forward_violators: Dict[int, int] = {}  # user_id -> violation_count
+        
         # Compile regex patterns
         self._compile_patterns()
     
@@ -38,6 +41,21 @@ class SpamDetector:
             r'https?://[^\s<>"{}|\\^`\[\]]+|'
             r'www\.[^\s<>"{}|\\^`\[\]]+|'
             r't\.me/[^\s<>"{}|\\^`\[\]]+'
+        )
+        
+        # Telegram bot link pattern (instant ban)
+        self.telegram_bot_pattern = re.compile(
+            r't\.me/[a-zA-Z0-9_]+bot|'
+            r'@[a-zA-Z0-9_]+bot',
+            re.IGNORECASE
+        )
+        
+        # Obfuscated adult content patterns
+        self.adult_patterns = re.compile(
+            r'x\s*x\s*x|'  # x x x
+            r'p[\s\-\.]*o[\s\-\.]*r[\s\-\.]*n|'  # p-o-r-n, p.o.r.n, p o r n
+            r'xxx|porn|nudes|onlyfans',
+            re.IGNORECASE
         )
         
         # Crypto address patterns
@@ -68,13 +86,28 @@ class SpamDetector:
             'spam_score': 0.0,
             'reasons': [],
             'action': 'none',
-            'details': {}
+            'details': {},
+            'instant_ban': False
         }
         
         if not message:
             return result
         
         message_lower = message.lower()
+        # Normalize message: remove special chars for pattern matching
+        message_normalized = re.sub(r'[^\w\s]', ' ', message_lower)
+        message_normalized = re.sub(r'\s+', ' ', message_normalized)
+        
+        # 0. INSTANT BAN CHECK - Adult content, casino, aggressive DM patterns
+        instant_ban_result = self._check_instant_ban(message, message_lower, message_normalized)
+        if instant_ban_result['instant_ban']:
+            result['is_spam'] = True
+            result['instant_ban'] = True
+            result['spam_score'] = 1.0
+            result['action'] = 'delete_and_ban'
+            result['reasons'] = instant_ban_result['reasons']
+            result['details']['instant_ban_triggers'] = instant_ban_result['triggers']
+            return result  # No further analysis needed
         
         # 1. Keyword detection
         keyword_score, matched_keywords = self._check_keywords(message_lower)
@@ -163,6 +196,71 @@ class SpamDetector:
             result['action'] = 'delete'
         elif result['spam_score'] >= 0.3:
             result['action'] = 'flag'
+        
+        return result
+    
+    def _check_instant_ban(self, message: str, message_lower: str, message_normalized: str) -> Dict:
+        """
+        Check for patterns that warrant INSTANT BAN (no warnings).
+        These are non-negotiable violations.
+        """
+        result = {'instant_ban': False, 'reasons': [], 'triggers': []}
+        
+        # 1. Adult/Porn content (obfuscated or not)
+        if self.adult_patterns.search(message):
+            result['instant_ban'] = True
+            result['reasons'].append("Adult/porn content detected")
+            result['triggers'].append("adult_content")
+            return result
+        
+        # 2. Telegram bot links (scam bots)
+        if self.telegram_bot_pattern.search(message):
+            result['instant_ban'] = True
+            result['reasons'].append("Telegram bot link detected")
+            result['triggers'].append("telegram_bot_link")
+            return result
+        
+        # 3. Casino/Betting/Promo code spam
+        casino_keywords = ['1win', 'casino', 'promo code', 'welcome bonus', 'big wins', 
+                          'jackpot', 'free spins', 'betting', 'slot machine']
+        for keyword in casino_keywords:
+            if keyword in message_lower:
+                result['instant_ban'] = True
+                result['reasons'].append(f"Casino/betting spam detected: {keyword}")
+                result['triggers'].append("casino_spam")
+                return result
+        
+        # 4. Aggressive DM patterns (instant ban)
+        dm_patterns = ['dm me now', 'inbox me', 'message me now', 'dm me', 
+                       'aaja inbox', 'inbox karo', 'dm kar', 'dm karo']
+        for pattern in dm_patterns:
+            if pattern in message_lower or pattern in message_normalized:
+                result['instant_ban'] = True
+                result['reasons'].append(f"Aggressive DM solicitation: {pattern}")
+                result['triggers'].append("dm_solicitation")
+                return result
+        
+        # 5. Check for instant ban keywords from config
+        if hasattr(self.config, 'INSTANT_BAN_KEYWORDS'):
+            for keyword in self.config.INSTANT_BAN_KEYWORDS:
+                if keyword.lower() in message_lower or keyword.lower() in message_normalized:
+                    result['instant_ban'] = True
+                    result['reasons'].append(f"Instant ban keyword: {keyword}")
+                    result['triggers'].append("instant_ban_keyword")
+                    return result
+        
+        # 6. Emoji-heavy messages with links (obfuscation pattern)
+        emoji_count = len(re.findall(r'[\U0001F300-\U0001F9FF]', message))
+        has_links = bool(self.url_pattern.search(message))
+        if emoji_count > 10 and has_links:
+            # Check for promotional keywords
+            promo_keywords = ['right here', 'click', 'join', 'bonus', 'win', 'free']
+            for keyword in promo_keywords:
+                if keyword in message_lower:
+                    result['instant_ban'] = True
+                    result['reasons'].append("Emoji-obfuscated spam with links")
+                    result['triggers'].append("emoji_obfuscation")
+                    return result
         
         return result
     
@@ -431,3 +529,22 @@ class SpamDetector:
             return 0.3, found_words
         
         return 0.0, []
+    
+    def add_forward_violation(self, user_id: int) -> int:
+        """
+        Track forward violations for a user.
+        Returns the violation count.
+        """
+        if user_id not in self.forward_violators:
+            self.forward_violators[user_id] = 0
+        self.forward_violators[user_id] += 1
+        return self.forward_violators[user_id]
+    
+    def get_forward_violations(self, user_id: int) -> int:
+        """Get forward violation count for a user."""
+        return self.forward_violators.get(user_id, 0)
+    
+    def clear_forward_violations(self, user_id: int):
+        """Clear forward violations for a user."""
+        if user_id in self.forward_violators:
+            del self.forward_violators[user_id]

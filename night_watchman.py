@@ -300,19 +300,64 @@ class NightWatchman:
             if self.config.REPUTATION_ENABLED:
                 self.reputation.track_daily_activity(user_id, username, user_name)
             
-            # Check for forwarded messages (blocked for everyone except admins)
+            # Check for forwarded messages (blocked for everyone except admins/VIP)
             if message.get('forward_date') or message.get('forward_from') or message.get('forward_from_chat'):
                 if self.config.BLOCK_FORWARDS:
-                    # Only admins can forward
-                    if self.config.FORWARD_ALLOW_ADMINS and await self._is_admin(chat_id, user_id):
-                        pass  # Allow admins
+                    # Check if admin
+                    is_admin = self.config.FORWARD_ALLOW_ADMINS and await self._is_admin(chat_id, user_id)
+                    
+                    # Check if VIP (reputation level)
+                    is_vip = False
+                    if self.config.FORWARD_ALLOW_VIP and self.config.REPUTATION_ENABLED:
+                        user_rep = self.reputation.get_user_rep(user_id)
+                        is_vip = user_rep.get('level', '') == 'VIP'
+                    
+                    if is_admin or is_vip:
+                        pass  # Allow admins and VIPs
                     else:
-                        # Delete and warn - no exceptions
+                        # Delete the forwarded message immediately
                         await self._delete_message(chat_id, message_id)
-                        await self._send_message(
-                            chat_id,
-                            f"⚠️ <b>{user_name}</b>, forwarding messages is not allowed in this group."
-                        )
+                        
+                        # Track forward violations
+                        violations = self.detector.add_forward_violation(user_id)
+                        
+                        if violations >= 2 or self.config.FORWARD_BAN_ON_REPEAT:
+                            # Ban on repeat violation
+                            if violations >= 2:
+                                banned = await self._ban_user(chat_id, user_id)
+                                if banned:
+                                    self.stats['users_banned'] += 1
+                                    await self._send_message(
+                                        chat_id,
+                                        f"🔨 <b>{user_name}</b> has been banned for repeated forward violations."
+                                    )
+                                    # Report to admin
+                                    if self.admin_chat_id:
+                                        await self._send_message(
+                                            self.admin_chat_id,
+                                            f"🔨 <b>Forward Ban</b>\n\n"
+                                            f"👤 User: {user_name} (@{username or 'N/A'})\n"
+                                            f"🆔 ID: <code>{user_id}</code>\n"
+                                            f"⚠️ Violations: {violations}\n"
+                                            f"✅ Action: Banned"
+                                        )
+                                return
+                        
+                        # First violation: Mute for 24h
+                        if self.config.FORWARD_INSTANT_MUTE:
+                            muted = await self._mute_user(chat_id, user_id)
+                            if muted:
+                                self.stats['users_muted'] += 1
+                                await self._send_message(
+                                    chat_id,
+                                    f"🔇 <b>{user_name}</b> has been muted for 24h. Forwarding is not allowed. "
+                                    f"Next violation will result in a ban."
+                                )
+                        else:
+                            await self._send_message(
+                                chat_id,
+                                f"⚠️ <b>{user_name}</b>, forwarding messages is not allowed in this group."
+                            )
                         return
             
             # Get user join date for new user detection
@@ -321,6 +366,19 @@ class NightWatchman:
             
             # Analyze message for spam and bad language
             result = self.detector.analyze(text, user_id, join_date)
+            
+            # Handle INSTANT BAN cases (porn, casino, aggressive DM, etc.)
+            if result.get('instant_ban'):
+                await self._handle_instant_ban(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    user_id=user_id,
+                    user_name=user_name,
+                    username=username,
+                    text=text,
+                    result=result
+                )
+                return  # Don't process further
             
             # Handle non-Indian language spam (with or without URLs)
             if result.get('non_indian_language'):
@@ -444,11 +502,51 @@ class NightWatchman:
             old_member = chat_member.get('old_chat_member', {})
             user = new_member.get('user', {})
             user_id = user.get('id')
+            user_name = user.get('first_name', 'Unknown')
+            username = user.get('username', '')
             new_status = new_member.get('status')
             old_status = old_member.get('status', '')
             is_bot = user.get('is_bot', False)
             
-            # Skip bots
+            # Block bot accounts from joining
+            if is_bot and self.config.BLOCK_BOT_JOINS:
+                logger.warning(f"🤖 Bot account {user_id} (@{username}) tried to join {chat_id}")
+                banned = await self._ban_user(chat_id, user_id)
+                if banned:
+                    self.stats['users_banned'] += 1
+                    if self.admin_chat_id:
+                        await self._send_message(
+                            self.admin_chat_id,
+                            f"🤖 <b>Bot Account Blocked</b>\n\n"
+                            f"👤 Bot: @{username or 'N/A'}\n"
+                            f"🆔 ID: <code>{user_id}</code>\n"
+                            f"💬 Chat: <code>{chat_id}</code>\n"
+                            f"✅ Action: Auto-banned"
+                        )
+                return
+            
+            # Also check for bot-like usernames (even if not marked as bot)
+            if username and self.config.BLOCK_BOT_JOINS:
+                import re
+                for pattern in self.config.BOT_USERNAME_PATTERNS:
+                    if re.match(pattern, username.lower()):
+                        logger.warning(f"🤖 Bot-like username {user_id} (@{username}) tried to join {chat_id}")
+                        banned = await self._ban_user(chat_id, user_id)
+                        if banned:
+                            self.stats['users_banned'] += 1
+                            if self.admin_chat_id:
+                                await self._send_message(
+                                    self.admin_chat_id,
+                                    f"🤖 <b>Bot-like Account Blocked</b>\n\n"
+                                    f"👤 User: {user_name} (@{username})\n"
+                                    f"🆔 ID: <code>{user_id}</code>\n"
+                                    f"💬 Chat: <code>{chat_id}</code>\n"
+                                    f"⚠️ Pattern matched: {pattern}\n"
+                                    f"✅ Action: Auto-banned"
+                                )
+                        return
+            
+            # Skip bots from further processing
             if is_bot:
                 return
             
@@ -1393,6 +1491,51 @@ No CAS ban record found."""
                 f"❌ Error generating analytics: {str(e)}",
                 auto_delete=False
             )
+    
+    async def _handle_instant_ban(self, chat_id: int, message_id: int, user_id: int,
+                                  user_name: str, username: str, text: str, result: Dict):
+        """
+        Handle INSTANT BAN violations - no warnings, immediate ban.
+        Triggers: porn/adult content, casino/betting, aggressive DM solicitation, etc.
+        """
+        reasons = result.get('reasons', ['Instant ban violation'])
+        triggers = result.get('details', {}).get('instant_ban_triggers', [])
+        
+        logger.warning(f"🚨 INSTANT BAN triggered for {user_name} (@{username}): {reasons}")
+        
+        # Delete the message
+        await self._delete_message(chat_id, message_id)
+        self.stats['messages_deleted'] += 1
+        
+        # Ban immediately
+        banned = await self._ban_user(chat_id, user_id)
+        if banned:
+            self.stats['users_banned'] += 1
+            
+            # Notify in group
+            await self._send_message(
+                chat_id,
+                f"🔨 <b>{user_name}</b> has been banned.\n"
+                f"📋 Reason: {', '.join(reasons)}"
+            )
+            
+            # Report to admin
+            if self.admin_chat_id:
+                report = f"""🚨 <b>INSTANT BAN - Severe Violation</b>
+
+👤 User: {user_name} (@{username or 'N/A'})
+🆔 User ID: <code>{user_id}</code>
+💬 Chat: <code>{chat_id}</code>
+⚠️ Triggers: {', '.join(triggers)}
+📋 Reasons: {', '.join(reasons)}
+
+📝 <b>Message:</b>
+<code>{text[:500]}</code>
+
+✅ <b>Action:</b> Immediately banned"""
+                await self._send_message(self.admin_chat_id, report)
+        else:
+            logger.error(f"Failed to ban user {user_id} for instant ban violation")
     
     async def _handle_non_indian_spam(self, chat_id: int, message_id: int, user_id: int,
                                       user_name: str, username: str, text: str, result: Dict):

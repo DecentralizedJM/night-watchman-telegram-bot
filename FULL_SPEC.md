@@ -76,6 +76,7 @@
 - **Missing Profile Info**: Flags accounts with no username/name
 - **Auto-Actions**: Can auto-ban or restrict suspicious accounts
 - **New User Restrictions**: Blocks links/media for first 24 hours
+- **Bot Account Blocking**: Auto-bans bot accounts that try to join
 
 ### 5. Anti-Raid Protection
 - **Raid Detection**: Detects when 10+ users join within 5 minutes
@@ -89,7 +90,21 @@
 - **Admin Notifications**: Reports when CAS-banned users try to join
 - **API**: Uses free public CAS API (api.cas.chat)
 
-### 7. Flood Detection
+### 7. Instant Ban Detection
+- **Adult/Porn Content**: Detects obfuscated patterns (p-o-r-n, x x x, etc.)
+- **Casino/Betting Spam**: Detects promo codes, 1win, jackpot, etc.
+- **DM Solicitation**: Flags "DM me now", "inbox me", Hindi variants
+- **Telegram Bot Links**: Auto-bans promotion of scam bots
+- **Emoji Obfuscation**: Detects spam hidden behind emoji walls
+- **Zero Tolerance**: These violations result in immediate ban, no warnings
+
+### 8. Forward Message Control
+- **Instant Mute**: First forward violation = 24h mute (not just warning)
+- **Ban on Repeat**: Second forward = permanent ban
+- **VIP Exception**: VIP reputation users can forward
+- **Admin Exception**: Admins can always forward
+
+### 9. Flood Detection
 - **Message Rate Limiting**: Flags users sending too many messages
 - **Duplicate Detection**: Catches spam floods with same message
 - **Automatic Action**: Warns/mutes based on severity

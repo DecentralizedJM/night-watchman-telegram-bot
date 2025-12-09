@@ -27,8 +27,34 @@ class Config:
         "send me", "invest with me", "trading signals",
         "binary options", "forex signals",
         
+        # AGGRESSIVE DM/CONTACT PATTERNS (INSTANT BAN)
+        "dm me now", "dm me", "message me now", "message me",
+        "inbox me now", "inbox me", "contact me now",
+        "text me now", "text me", "pm me now", "pm me",
+        "hit me up", "reach out now", "reach out to me",
+        "slide into", "drop a dm", "send a dm",
+        
+        # Trading/Forex Scam Patterns
+        "consistently profitable", "consistently profit",
+        "straight months", "trading smart", "smart strategy",
+        "trading emotionally", "level up your trading",
+        "profitable for over", "profitable strategy",
+        "proven strategy", "proven method", "proven system",
+        
+        # Casino/Betting Spam (INSTANT BAN)
+        "big wins", "promo code", "welcome bonus", "1win",
+        "casino", "betting", "jackpot", "slot", "roulette",
+        "blackjack", "poker bonus", "free spins", "cash out",
+        "win big", "massive win", "hit a win", "start cashing",
+        
+        # Adult/Porn (INSTANT BAN)
+        "xxx", "porn", "p-o-r-n", "x x x", "p o r n",
+        "onlyfans", "only fans", "18+", "adult content",
+        "nudes", "sexy video", "hot video",
+        
         # Hindi/Hinglish Spam Patterns
         "dm karo", "dm kijiye", "message karo", "contact karo",
+        "inbox karo", "inbox me aao", "aaja inbox",
         "paisa kamao", "paise kamao", "ghar baithe kamao", "lakho kamao",
         "jaldi karo", "abhi join karo", "miss mat karo",
         "free mein", "muft mein", "guaranteed return",
@@ -38,6 +64,19 @@ class Config:
         "whatsapp karo", "call karo", "telegram pe aao",
         "scheme join karo", "yahan click karo", "link pe click",
         "limited offer", "jaldi grab karo", "sirf aaj",
+        "aaja dm", "dm kar", "inbox kar", "message kar",
+    ]
+    
+    # INSTANT BAN keywords (no warnings, immediate ban)
+    INSTANT_BAN_KEYWORDS = [
+        # Adult/Porn
+        "xxx", "porn", "p-o-r-n", "x x x", "p o r n",
+        "onlyfans", "only fans", "nudes",
+        # Casino/Betting
+        "1win", "casino", "promo code", "welcome bonus",
+        "big wins", "jackpot", "free spins",
+        # Scam patterns
+        "dm me now", "inbox me", "message me now",
     ]
     
     # Suspicious URL patterns
@@ -110,6 +149,13 @@ class Config:
     AUTO_BAN_SUSPICIOUS_JOINS = False  # Auto-ban or just restrict
     RESTRICT_NEW_USERS_HOURS = 24  # Restrict new users for X hours
     
+    # Bot Account Blocking
+    BLOCK_BOT_JOINS = True  # Auto-ban bot accounts that join
+    BOT_USERNAME_PATTERNS = [
+        r'.*bot$',  # Ends with "bot"
+        r'.*_bot$',  # Ends with "_bot"
+    ]
+    
     # Anti-Raid Protection
     ANTI_RAID_ENABLED = True
     RAID_DETECTION_WINDOW_MINUTES = 5  # Check last 5 minutes
@@ -119,6 +165,13 @@ class Config:
     CAS_ENABLED = True  # Check new members against CAS database
     CAS_AUTO_BAN = True  # Auto-ban users found in CAS database
     CAS_API_URL = "https://api.cas.chat/check"  # CAS API endpoint
+    
+    # Forward Message Handling
+    BLOCK_FORWARDS = True
+    FORWARD_ALLOW_ADMINS = True
+    FORWARD_ALLOW_VIP = True
+    FORWARD_INSTANT_MUTE = True  # Mute user immediately on forward (not just warn)
+    FORWARD_BAN_ON_REPEAT = True  # Ban if user forwards again after mute
     
     # Welcome Message
     SEND_WELCOME_MESSAGE = False  # Don't auto-send welcome (users can use /guidelines)
