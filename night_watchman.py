@@ -346,6 +346,9 @@ class NightWatchman:
             
             # Skip messages from admins (don't moderate them)
             if await self._is_admin(chat_id, user_id):
+                # Still track admin activity for stats (but they don't get rep points)
+                if self.config.ANALYTICS_ENABLED:
+                    self.analytics.track_message(user_id, chat_id)
                 return
             
             # Track this group as monitored
@@ -882,10 +885,12 @@ I am a spam detection bot that protects Telegram groups from:
             await self._handle_analytics_command(chat_id, user_id, text)
         
         elif text.startswith('/rep'):
-            # Show user's reputation
-            if self.config.REPUTATION_ENABLED:
-                msg = self.reputation.format_user_rep(user_id)
-                await self._send_message(chat_id, msg, auto_delete=False)
+            # Admins don't have reputation - they're above the system
+            await self._send_message(
+                chat_id, 
+                "👑 <b>You're an admin!</b>\n\nAdmins don't participate in the reputation system - you're already at the top! 🎖️",
+                auto_delete=False
+            )
         
         elif text.startswith('/leaderboard'):
             # Show leaderboard with optional days filter
@@ -947,8 +952,15 @@ I am a spam detection bot that protects Telegram groups from:
         
         elif command == '/rep':
             if self.config.REPUTATION_ENABLED:
-                msg = self.reputation.format_user_rep(user_id, username, user_name)
-                await self._send_message(chat_id, msg)
+                # Check if user is an admin
+                if await self._is_admin(chat_id, user_id):
+                    await self._send_message(
+                        chat_id, 
+                        "👑 <b>You're an admin!</b>\n\nAdmins don't participate in the reputation system - you're already at the top! 🎖️"
+                    )
+                else:
+                    msg = self.reputation.format_user_rep(user_id, username, user_name)
+                    await self._send_message(chat_id, msg)
             return True
         
         elif text.startswith('/leaderboard'):
