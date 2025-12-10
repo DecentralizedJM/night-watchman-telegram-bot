@@ -288,11 +288,21 @@ class AnalyticsTracker:
             for h, c in sorted_hours[:5]
         ]
     
-    def format_report(self, stats: Dict, include_breakdown: bool = False) -> str:
+    def format_report(self, stats: Dict, include_breakdown: bool = False, include_peak_hours: bool = True) -> str:
         """Format stats into a readable message"""
         # Get new active members count
         new_active = stats.get('new_active_members', 0)
         total_known_users = len(self.data.get('all_time_users', []))
+        
+        # Get peak hours
+        peak_hours_text = ""
+        if include_peak_hours:
+            peak_hours = self.get_peak_hours(days=7)
+            if peak_hours:
+                peak_hours_text = "\n\n⏰ <b>Peak Activity Hours (7d)</b>\n"
+                for i, ph in enumerate(peak_hours[:3], 1):
+                    bar = "█" * min(10, max(1, ph['messages'] // 50))
+                    peak_hours_text += f"   {i}. {ph['hour_str']} - {ph['messages']:,} msgs {bar}\n"
         
         if 'period' in stats:
             # Range report
@@ -302,7 +312,7 @@ class AnalyticsTracker:
 
 👥 <b>Members</b>
    🆕 New Active: {new_active}
-   � Total Known: {total_known_users:,}
+   📋 Total Known: {total_known_users:,}
 
 💬 <b>Activity</b>
    📨 Messages: {stats['messages']:,}
@@ -323,7 +333,7 @@ class AnalyticsTracker:
 
 👥 <b>Members</b>
    🆕 New Active: {new_active}
-   � Total Known: {total_known_users:,}
+   📋 Total Known: {total_known_users:,}
 
 💬 <b>Activity</b>
    📨 Messages: {stats['messages']:,}
@@ -335,6 +345,9 @@ class AnalyticsTracker:
    ⚠️ Warnings issued: {stats['warnings']}
    🔇 Users muted: {stats['mutes']}
    🔨 Users banned: {stats['bans']}"""
+        
+        # Add peak hours to report
+        report += peak_hours_text
         
         return report
     

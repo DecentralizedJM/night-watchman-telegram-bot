@@ -78,6 +78,9 @@ class NightWatchman:
         # Track message authors for admin enhancement
         self.message_authors: Dict[str, int] = {}  # f"{chat_id}_{message_id}" -> user_id
         
+        # Track media messages for spam detection (rate limiting)
+        self.media_timestamps: Dict[int, List[datetime]] = {}  # user_id -> [media_send_times]
+        
         # Track messages that received admin enhancement (prevent duplicates)
         self.enhanced_messages: Dict[str, bool] = {}  # f"{chat_id}_{message_id}" -> True
         
@@ -132,6 +135,11 @@ class NightWatchman:
             'promo': [
                 "📢 {name} spammed promos. Not here! Banned.",
                 "🚫 Promotional spam detected. {name} is out!",
+            ],
+            'media_spam': [
+                "🖼️ {name} got banned for media spam. Keep it chill!",
+                "📷 Too much too fast! {name} spammed media. Banned!",
+                "🚫 Media spam = ban. Goodbye {name}!",
             ],
             'default': [
                 "🔨 {name} has been banned.",
@@ -468,6 +476,99 @@ class NightWatchman:
                                 f"⚠️ <b>{user_name}</b>, forwarding messages is not allowed in this group."
                             )
                         return
+            
+            # ========== MEDIA SPAM DETECTION ==========
+            if self.config.MEDIA_SPAM_DETECTION_ENABLED:
+                # Check for media content (photos, videos, stickers, GIFs)
+                has_photo = message.get('photo')  # Photo messages
+                has_sticker = message.get('sticker')  # Sticker messages
+                has_animation = message.get('animation')  # GIF/animation
+                has_video = message.get('video')  # Video messages
+                has_video_note = message.get('video_note')  # Video notes (circles)
+                has_document = message.get('document')  # Documents (could be GIFs too)
+                caption = message.get('caption', '')
+                
+                media_type = None
+                if has_photo:
+                    media_type = "photo"
+                elif has_sticker:
+                    media_type = "sticker"
+                elif has_animation:
+                    media_type = "GIF/animation"
+                elif has_video:
+                    media_type = "video"
+                elif has_video_note:
+                    media_type = "video_note"
+                elif has_document:
+                    # Check if document is a GIF
+                    doc = has_document
+                    if doc.get('mime_type') == 'video/mp4' or doc.get('file_name', '').endswith('.gif'):
+                        media_type = "GIF"
+                        has_animation = True  # Treat as animation
+                
+                if media_type:
+                    is_new_user = self._is_new_user(chat_id, user_id, self.config.MEDIA_NEW_USER_HOURS)
+                    
+                    # Check 1: Block media from new users
+                    if is_new_user:
+                        should_block = False
+                        block_reason = None
+                        
+                        if self.config.BLOCK_MEDIA_FROM_NEW_USERS and has_photo:
+                            should_block = True
+                            block_reason = f"new users can't send photos for {self.config.MEDIA_NEW_USER_HOURS}h after joining"
+                        elif self.config.BLOCK_MEDIA_FROM_NEW_USERS and has_video:
+                            should_block = True
+                            block_reason = f"new users can't send videos for {self.config.MEDIA_NEW_USER_HOURS}h after joining"
+                        elif self.config.BLOCK_STICKERS_FROM_NEW_USERS and has_sticker:
+                            should_block = True
+                            block_reason = f"new users can't send stickers for {self.config.MEDIA_NEW_USER_HOURS}h after joining"
+                        elif self.config.BLOCK_GIFS_FROM_NEW_USERS and has_animation:
+                            should_block = True
+                            block_reason = f"new users can't send GIFs for {self.config.MEDIA_NEW_USER_HOURS}h after joining"
+                        
+                        if should_block:
+                            await self._handle_media_spam(
+                                chat_id=chat_id,
+                                message_id=message_id,
+                                user_id=user_id,
+                                user_name=user_name,
+                                username=username,
+                                media_type=media_type,
+                                reason=block_reason,
+                                caption=caption
+                            )
+                            return
+                    
+                    # Check 2: Media spam rate limit (for all users)
+                    if self._check_media_spam_rate(user_id):
+                        await self._handle_media_spam(
+                            chat_id=chat_id,
+                            message_id=message_id,
+                            user_id=user_id,
+                            user_name=user_name,
+                            username=username,
+                            media_type=media_type,
+                            reason=f"sending media too fast (>{self.config.MAX_MEDIA_PER_MINUTE}/min)",
+                            caption=caption
+                        )
+                        return
+                    
+                    # Check 3: Analyze caption for spam (if any)
+                    if caption:
+                        caption_result = self.detector.analyze(caption, user_id, None, 
+                                                                message.get('caption_entities', []))
+                        if caption_result.get('instant_ban'):
+                            await self._handle_instant_ban(
+                                chat_id=chat_id,
+                                message_id=message_id,
+                                user_id=user_id,
+                                user_name=user_name,
+                                username=username,
+                                text=caption,
+                                result=caption_result
+                            )
+                            return
             
             # Get user join date for new user detection
             member_key = f"{chat_id}_{user_id}"
@@ -848,6 +949,112 @@ class NightWatchman:
 🔧 Action: {result['action']}"""
         
         await self._send_message(self.admin_chat_id, report)
+    
+    async def _handle_media_spam(self, chat_id: int, message_id: int, user_id: int,
+                                  user_name: str, username: str, media_type: str, 
+                                  reason: str, caption: str = None):
+        """Handle media spam (photos, stickers, GIFs from new users or spam rate)"""
+        self.stats['spam_detected'] += 1
+        
+        # Track in analytics
+        if self.config.ANALYTICS_ENABLED:
+            self.analytics.track_spam_blocked(chat_id)
+        
+        logger.warning(f"🖼️ Media spam detected from {user_name} (@{username}): {reason}")
+        
+        # Delete the media message
+        deleted = await self._delete_message(chat_id, message_id)
+        if deleted:
+            self.stats['messages_deleted'] += 1
+            logger.info(f"🗑️ Deleted media message from {user_name}")
+        
+        action = self.config.MEDIA_SPAM_ACTION  # "delete", "delete_and_warn", "delete_and_mute"
+        
+        if action == "delete_and_warn":
+            warnings = self.detector.add_warning(user_id)
+            self.stats['users_warned'] += 1
+            
+            # Track in reputation
+            if self.config.REPUTATION_ENABLED:
+                self.reputation.on_warning(user_id, username, user_name)
+            
+            if warnings >= self.config.AUTO_BAN_AFTER_WARNINGS:
+                banned = await self._ban_user(chat_id, user_id)
+                if banned:
+                    self.stats['users_banned'] += 1
+                    ban_msg = self._get_ban_message(user_name, username, 'media_spam')
+                    await self._send_message(chat_id, ban_msg)
+            else:
+                remaining = self.config.AUTO_MUTE_AFTER_WARNINGS - warnings
+                await self._send_message(
+                    chat_id,
+                    f"⚠️ <b>{user_name}</b>, {reason}. "
+                    f"Warning {warnings}/{self.config.AUTO_MUTE_AFTER_WARNINGS}."
+                )
+        
+        elif action == "delete_and_mute":
+            muted = await self._mute_user(chat_id, user_id)
+            if muted:
+                self.stats['users_muted'] += 1
+                await self._send_message(
+                    chat_id,
+                    f"🔇 <b>{user_name}</b> has been muted for {self.config.MUTE_DURATION_HOURS}h — {reason}"
+                )
+        
+        # Report to admin
+        if self.admin_chat_id:
+            report = f"""🖼️ <b>Media Spam Detected</b>
+
+👤 User: {user_name} (@{username or 'N/A'})
+🆔 User ID: <code>{user_id}</code>
+💬 Chat: <code>{chat_id}</code>
+
+📷 <b>Media Type:</b> {media_type}
+⚠️ <b>Reason:</b> {reason}"""
+            
+            if caption:
+                report += f"\n\n📝 <b>Caption:</b>\n<code>{caption[:300]}</code>"
+            
+            await self._send_message(self.admin_chat_id, report)
+    
+    def _check_media_spam_rate(self, user_id: int) -> bool:
+        """Check if user is sending media too fast (spam rate)"""
+        now = datetime.now(timezone.utc)
+        
+        # Get user's recent media timestamps
+        if user_id not in self.media_timestamps:
+            self.media_timestamps[user_id] = []
+        
+        timestamps = self.media_timestamps[user_id]
+        
+        # Filter to only last minute
+        one_minute_ago = now - timedelta(minutes=1)
+        timestamps = [t for t in timestamps if t > one_minute_ago]
+        
+        # Add current timestamp
+        timestamps.append(now)
+        self.media_timestamps[user_id] = timestamps
+        
+        # Check rate limit
+        return len(timestamps) > self.config.MAX_MEDIA_PER_MINUTE
+    
+    def _is_new_user(self, chat_id: int, user_id: int, hours: int = 24) -> bool:
+        """Check if user joined within the specified hours"""
+        member_key = f"{chat_id}_{user_id}"
+        join_date = self.member_join_dates.get(member_key)
+        
+        if not join_date:
+            # If we don't have join date tracked, assume they're not new
+            # (they joined before bot started or bot was restarted)
+            return False
+        
+        now = datetime.now(timezone.utc)
+        # Ensure join_date is timezone-aware
+        if join_date.tzinfo is None:
+            join_date = join_date.replace(tzinfo=timezone.utc)
+        
+        hours_since_join = (now - join_date).total_seconds() / 3600
+        return hours_since_join < hours
     
     async def _handle_private_message(self, chat_id: int, user_id: int, text: str):
         """Handle private messages (commands)"""

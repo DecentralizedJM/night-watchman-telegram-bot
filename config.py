@@ -170,6 +170,15 @@ class Config:
     CAS_AUTO_BAN = True  # Auto-ban users found in CAS database
     CAS_API_URL = "https://api.cas.chat/check"  # CAS API endpoint
     
+    # Media/Sticker Spam Detection
+    MEDIA_SPAM_DETECTION_ENABLED = True
+    BLOCK_MEDIA_FROM_NEW_USERS = True  # Block photos/videos/stickers from new users
+    MEDIA_NEW_USER_HOURS = 24  # Hours before new users can send media
+    BLOCK_STICKERS_FROM_NEW_USERS = True  # Block stickers from new users
+    BLOCK_GIFS_FROM_NEW_USERS = True  # Block GIFs/animations from new users
+    MAX_MEDIA_PER_MINUTE = 3  # Max media messages per user per minute (spam detection)
+    MEDIA_SPAM_ACTION = "delete_and_warn"  # "delete", "delete_and_warn", "delete_and_mute"
+    
     # Forward Message Handling
     BLOCK_FORWARDS = True
     FORWARD_ALLOW_ADMINS = True
