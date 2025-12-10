@@ -220,32 +220,72 @@ class Config:
     # ==================== NEW FEATURES ====================
     
     # Custom Commands
-    GUIDELINES_MESSAGE = """📋 <b>Community Guidelines</b>
+    GUIDELINES_MESSAGE = """� <b>Mudrex Telegram Community Guidelines</b>
 
-1️⃣ <b>Be Respectful</b>
-   • Treat everyone with respect
-   • No harassment or bullying
-   • No discrimination
+Welcome to the official Mudrex Telegram community! This is your space to learn, share, and grow as a crypto trader and investor — together.
 
-2️⃣ <b>No Spam or Scams</b>
-   • No unsolicited promotions
-   • No phishing or scam links
-   • No fake giveaways
+<i>This group is actively moderated to ensure quality discussions, safety, and clarity for all users.</i>
 
-3️⃣ <b>Stay On Topic</b>
-   • Keep discussions relevant to trading/crypto
-   • Use appropriate channels
+━━━━━━━━━━━━━━━━━━━━
 
-4️⃣ <b>No Bad Language</b>
-   • Keep it professional
-   • No excessive profanity
+🎯 <b>What This Community Is For</b>
 
-5️⃣ <b>No Shilling</b>
-   • No promoting other projects without permission
+• Learning about crypto — from charts to concepts
+• Getting the most out of the Mudrex app
+• Sharing tips, strategies, and experiences with other traders
+• Staying updated on Mudrex features and campaigns
 
-⚠️ Violations result in warnings, mutes, or bans.
+━━━━━━━━━━━━━━━━━━━━
 
-<i>Powered by Mudrex</i>"""
+🔏 <b>Code of Conduct</b>
+
+<b>1. Respect Everyone</b>
+Politeness is non-negotiable. No trolling, abuse, hate speech, or discrimination. No personal attacks. Ever.
+
+<b>2. Zero Tolerance for Link Sharing</b>
+No posting external links, referral codes, or promotions — even if they're related to crypto. Repeated violations = ban.
+
+<b>3. Don't Spam</b>
+Keep discussions meaningful. No flooding or repetitive messages.
+
+<b>4. Protect Your Privacy</b>
+Never share wallet addresses, login screenshots, emails, or account details.
+Need help? → <b>help@mudrex.com</b>
+
+━━━━━━━━━━━━━━━━━━━━
+
+📚 <b>Posting Guidelines</b>
+
+✅ <b>Encouraged</b>
+• "How do I set a trailing stop-loss on Mudrex Futures?"
+• "Any strategy to invest weekly using the SIP mode?"
+• "Where can I see my P&L details in the app?"
+
+❌ <b>Not Allowed</b>
+• "Check out this new project! [link]"
+• "Use my referral code for bonus 💸"
+
+━━━━━━━━━━━━━━━━━━━━
+
+🛠 <b>Help & Feedback</b>
+
+Product issues? → <b>help@mudrex.com</b>
+
+━━━━━━━━━━━━━━━━━━━━
+
+🚨 <b>Admin Discretion</b>
+
+Admins may remove any content or user that goes against the spirit of this community. Bans may be issued without prior warning for serious or repeated violations.
+
+━━━━━━━━━━━━━━━━━━━━
+
+🙌 <b>Final Note</b>
+
+No question is too basic. If you're here to learn, explore, or build — you're welcome.
+
+If you're here to sell, shill, or spam — you're in the wrong place.
+
+<i>Powered by Night Watchman 🌙</i>"""
     
     HELP_MESSAGE = """🌙 <b>Night Watchman Commands</b>
 
