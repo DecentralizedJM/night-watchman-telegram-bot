@@ -298,7 +298,9 @@ class SpamDetector:
         
         # 3. Casino/Betting/Promo code spam
         casino_keywords = ['1win', 'casino', 'promo code', 'welcome bonus', 'big wins', 
-                          'jackpot', 'free spins', 'betting', 'slot machine']
+                          'jackpot', 'free spins', 'betting', 'slot machine',
+                          'on your balance', 'activate the promo', 'activate promo',
+                          'play anywhere', 'get $', 'your balance']
         for keyword in casino_keywords:
             if keyword in message_lower or keyword in message_deobfuscated_lower:
                 result['instant_ban'] = True

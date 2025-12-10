@@ -361,9 +361,36 @@ class NightWatchman:
                 self.reputation.track_daily_activity(user_id, username, user_name)
             
             # Check for forwarded messages (blocked for everyone except admins/VIP)
-            is_forwarded = message.get('forward_date') or message.get('forward_from') or message.get('forward_from_chat')
+            # Note: forward_origin is the newer API field (Bot API 7.0+), forward_from/forward_date are legacy
+            is_forwarded = (
+                message.get('forward_date') or 
+                message.get('forward_from') or 
+                message.get('forward_from_chat') or
+                message.get('forward_origin')  # New Telegram API field
+            )
+            
+            # Check for content shared via bot/mini app (via_bot field)
+            via_bot = message.get('via_bot')
+            if via_bot:
+                logger.info(f"🤖 Message via bot detected: {via_bot.get('username', 'unknown')} from {user_name}")
+                # Treat bot-shared content as potential spam - analyze it
+                bot_result = self.detector.analyze(text, user_id, None, entities)
+                if bot_result.get('instant_ban'):
+                    await self._delete_message(chat_id, message_id)
+                    await self._handle_instant_ban(
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        user_id=user_id,
+                        user_name=user_name,
+                        username=username,
+                        text=text,
+                        result=bot_result,
+                        is_forwarded=True  # Treat as forwarded for reporting
+                    )
+                    return
             
             if is_forwarded:
+                logger.info(f"📤 Forwarded message detected from {user_name} (@{username})")
                 if self.config.BLOCK_FORWARDS:
                     # Check if admin
                     is_admin = self.config.FORWARD_ALLOW_ADMINS and await self._is_admin(chat_id, user_id)
