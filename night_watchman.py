@@ -358,7 +358,9 @@ class NightWatchman:
                 self.reputation.track_daily_activity(user_id, username, user_name)
             
             # Check for forwarded messages (blocked for everyone except admins/VIP)
-            if message.get('forward_date') or message.get('forward_from') or message.get('forward_from_chat'):
+            is_forwarded = message.get('forward_date') or message.get('forward_from') or message.get('forward_from_chat')
+            
+            if is_forwarded:
                 if self.config.BLOCK_FORWARDS:
                     # Check if admin
                     is_admin = self.config.FORWARD_ALLOW_ADMINS and await self._is_admin(chat_id, user_id)
@@ -372,6 +374,25 @@ class NightWatchman:
                     if is_admin or is_vip:
                         pass  # Allow admins and VIPs
                     else:
+                        # CRITICAL: Analyze forwarded message for spam BEFORE taking action
+                        # This catches casino spam, bot links, porn, etc. in forwards
+                        forward_result = self.detector.analyze(text, user_id, None)
+                        
+                        # If forwarded message contains instant-ban content, BAN immediately
+                        if forward_result.get('instant_ban'):
+                            await self._delete_message(chat_id, message_id)
+                            await self._handle_instant_ban(
+                                chat_id=chat_id,
+                                message_id=message_id,
+                                user_id=user_id,
+                                user_name=user_name,
+                                username=username,
+                                text=text,
+                                result=forward_result,
+                                is_forwarded=True
+                            )
+                            return
+                        
                         # Delete the forwarded message immediately
                         await self._delete_message(chat_id, message_id)
                         
@@ -1550,7 +1571,8 @@ No CAS ban record found."""
             )
     
     async def _handle_instant_ban(self, chat_id: int, message_id: int, user_id: int,
-                                  user_name: str, username: str, text: str, result: Dict):
+                                  user_name: str, username: str, text: str, result: Dict,
+                                  is_forwarded: bool = False):
         """
         Handle INSTANT BAN violations - no warnings, immediate ban.
         Triggers: porn/adult content, casino/betting, aggressive DM solicitation, etc.
@@ -1558,7 +1580,11 @@ No CAS ban record found."""
         reasons = result.get('reasons', ['Instant ban violation'])
         triggers = result.get('details', {}).get('instant_ban_triggers', [])
         
-        logger.warning(f"🚨 INSTANT BAN triggered for {user_name} (@{username}): {reasons}")
+        # Add forwarded message indicator if applicable
+        if is_forwarded:
+            triggers = ['forwarded_spam'] + triggers
+        
+        logger.warning(f"🚨 INSTANT BAN triggered for {user_name} (@{username}): {reasons} (forwarded={is_forwarded})")
         
         # Delete the message
         await self._delete_message(chat_id, message_id)
@@ -1586,8 +1612,9 @@ No CAS ban record found."""
             
             # Report to admin
             if self.admin_chat_id:
+                forward_indicator = "📤 <b>(Forwarded Spam)</b>\n" if is_forwarded else ""
                 report = f"""🚨 <b>INSTANT BAN - Severe Violation</b>
-
+{forward_indicator}
 👤 User: {user_name} (@{username or 'N/A'})
 🆔 User ID: <code>{user_id}</code>
 💬 Chat: <code>{chat_id}</code>

@@ -272,7 +272,9 @@ class SpamDetector:
         # 5. Check for instant ban keywords from config
         if hasattr(self.config, 'INSTANT_BAN_KEYWORDS'):
             for keyword in self.config.INSTANT_BAN_KEYWORDS:
-                if keyword.lower() in message_lower or keyword.lower() in message_normalized:
+                keyword_lower = keyword.lower()
+                # Check original, normalized, AND deobfuscated versions
+                if keyword_lower in message_lower or keyword_lower in message_normalized or keyword_lower in message_deobfuscated_lower:
                     result['instant_ban'] = True
                     result['reasons'].append(f"Instant ban keyword: {keyword}")
                     result['triggers'].append("instant_ban_keyword")

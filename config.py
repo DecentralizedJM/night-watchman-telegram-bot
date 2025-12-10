@@ -46,6 +46,9 @@ class Config:
         "casino", "betting", "jackpot", "slot", "roulette",
         "blackjack", "poker bonus", "free spins", "cash out",
         "win big", "massive win", "hit a win", "start cashing",
+        "winning streak", "top prize", "grab bonus", "telegram bonus",
+        "enter code", "heating up", "could be yours", "get bonus",
+        "$200 free", "$100 free", "$500 free", "free $",
         
         # Adult/Porn (INSTANT BAN)
         "xxx", "porn", "p-o-r-n", "x x x", "p o r n",
@@ -75,6 +78,7 @@ class Config:
         # Casino/Betting
         "1win", "casino", "promo code", "welcome bonus",
         "big wins", "jackpot", "free spins",
+        "winning streak", "top prize", "grab bonus", "telegram bonus",
         # Scam patterns
         "dm me now", "inbox me", "message me now",
     ]

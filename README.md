@@ -2,7 +2,14 @@
 
 24/7 Telegram watchdog & moderation bot. Protects your groups from spam, scams, bad language, and more.
 
-**Latest Release:** v1.1.1 (December 9, 2025) - 🛡️ Aggressive Anti-Spam Overhaul
+**Latest Release:** v1.1.2 (December 10, 2025) - 📤 Forwarded Spam Detection Fix
+- **CRITICAL FIX:** Forwarded messages now analyzed for spam content before taking action
+- Forwarded casino/bot spam now triggers instant ban (not just mute)
+- Added new instant-ban keywords: "winning streak", "top prize", "telegram bonus", etc.
+- Deobfuscation now applied to instant ban keyword matching
+- Enhanced admin reports show when spam was forwarded
+
+**Previous Release:** v1.1.1 (December 9, 2025) - 🛡️ Aggressive Anti-Spam Overhaul
 - Fixed all 6 reported scammer detection failures
 - Cyrillic character deobfuscation for porn spam
 - Instant-ban system for zero-tolerance violations
@@ -51,7 +58,25 @@
 - `/rep` - Check your reputation
 - `/leaderboard` - Top 10 users by reputation
 
-## 🚀 Recent Updates (v1.1.1)
+## 🚀 Recent Updates (v1.1.2)
+
+### 📤 Forwarded Spam Detection Fix
+**Problem:** Forwarded spam messages (like casino/bot promotions) were only triggering mute, not being analyzed for actual spam content.
+
+**Fix:** Forwarded messages are now analyzed for spam **before** taking forward-blocking action:
+- If forwarded message contains instant-ban content → **immediate ban**
+- Casino spam, bot links, porn, etc. in forwards now properly detected
+- Admin reports now indicate when the spam was a forwarded message
+
+### 🆕 New Instant-Ban Keywords
+- `winning streak`, `top prize`, `grab bonus`, `telegram bonus`
+- Better detection of "$X FREE" patterns
+
+### 🔧 Technical Improvements
+- Deobfuscation (Cyrillic→ASCII) now applied to instant ban keyword matching
+- Forwarded spam indicator in admin reports
+
+## Previous Updates (v1.1.1)
 
 ### 🎯 Fixed All 6 Scammer Detection Failures
 1. **Cyrillic-obfuscated porn** - Deobfuscates Cyrillic lookalikes (х→x, р→p, о→o)
