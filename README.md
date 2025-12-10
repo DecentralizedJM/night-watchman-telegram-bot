@@ -2,7 +2,12 @@
 
 24/7 Telegram watchdog & moderation bot. Protects your groups from spam, scams, bad language, and more.
 
-**Latest Release:** v1.1.2 (December 10, 2025) - 📤 Forwarded Spam Detection Fix
+**Latest Release:** v1.1.3 (December 10, 2025) - 🔗 Hyperlink + Emoji Detection
+- **NEW RULE:** Messages with hyperlinked text (text_link) + more than 2 emojis = instant ban
+- Catches disguised spam links hidden behind pretty emoji-laden text
+- Improved emoji detection pattern for better coverage
+
+**Previous Release:** v1.1.2 (December 10, 2025) - 📤 Forwarded Spam Detection Fix
 - **CRITICAL FIX:** Forwarded messages now analyzed for spam content before taking action
 - Forwarded casino/bot spam now triggers instant ban (not just mute)
 - Added new instant-ban keywords: "winning streak", "top prize", "telegram bonus", etc.

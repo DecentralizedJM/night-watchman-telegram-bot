@@ -5,13 +5,13 @@ from spam_detector import SpamDetector
 detector = SpamDetector()
 
 test_messages = [
-    ('💜 My х x х р о r n 💜', 'Adult/porn'),
-    ('MY BEST XXX P-O-R-N', 'Adult/porn'),
-    ('DM me now for profits', 'DM solicitation'),
-    ('inbox me for trading', 'DM solicitation'),
-    ('t.me/scambot click here', 'Telegram bot'),
-    ('1win promo code get bonus', 'Casino'),
-    ('Ready for big wins? promo code start cashing today', 'Promo spam'),
+    ('💜 My х x х р о r n 💜', 'Adult/porn', None),
+    ('MY BEST XXX P-O-R-N', 'Adult/porn', None),
+    ('DM me now for profits', 'DM solicitation', None),
+    ('inbox me for trading', 'DM solicitation', None),
+    ('t.me/scambot click here', 'Telegram bot', None),
+    ('1win promo code get bonus', 'Casino', None),
+    ('Ready for big wins? promo code start cashing today', 'Promo spam', None),
     # NEW: The exact spam that bypassed detection
     ('''⭐⭐⭐⭐⭐⭐⭐ ⭐⭐
 
@@ -25,11 +25,14 @@ test_messages = [
 
 🍀 Enter code 200free and set off your winning streak!
 
-👑 Jackpot's heating up — top prize could be yours!''', 'Casino/Bot spam - MUST CATCH'),
+👑 Jackpot's heating up — top prize could be yours!''', 'Casino/Bot spam - MUST CATCH', None),
     # Variations to test
-    ('Get your winning streak started! Jackpot awaits', 'Casino keywords'),
-    ('Grab your telegram bonus now!', 'Telegram bonus'),
-    ('Top prize could be yours today!', 'Top prize keyword'),
+    ('Get your winning streak started! Jackpot awaits', 'Casino keywords', None),
+    ('Grab your telegram bonus now!', 'Telegram bonus', None),
+    ('Top prize could be yours today!', 'Top prize keyword', None),
+    # NEW: Hyperlink + emoji test (simulating Telegram text_link entity)
+    ('🔥 Click here for amazing deals! 💰🎁', 'Hyperlink + emojis', [{'type': 'text_link', 'url': 'https://scam.com'}]),
+    ('Check this out ✨🌟⭐', 'Hyperlink + 3 emojis', [{'type': 'text_link', 'url': 'https://spam.com'}]),
 ]
 
 print('=' * 60)
@@ -37,8 +40,9 @@ print('TESTING ENHANCED DETECTION')
 print('=' * 60)
 
 all_passed = True
-for msg, expected in test_messages:
-    result = detector.analyze(msg, user_id=12345)
+for item in test_messages:
+    msg, expected, entities = item
+    result = detector.analyze(msg, user_id=12345, entities=entities)
     is_ban = result.get('instant_ban')
     is_spam = result.get('is_spam')
     status = '🚨 INSTANT BAN' if is_ban else ('⚠️ SPAM' if is_spam else '❌ MISSED')

@@ -97,10 +97,33 @@ class SpamDetector:
         
         # Repeated characters
         self.repeated_chars = re.compile(r'(.)\1{4,}')
+        
+        # Emoji pattern for counting (comprehensive - includes all common emoji ranges)
+        self.emoji_pattern = re.compile(
+            r'[\U0001F300-\U0001F9FF]|'  # Misc symbols, emoticons, etc.
+            r'[\U00002600-\U000027BF]|'  # Misc symbols  
+            r'[\U0001F100-\U0001F1FF]|'  # Enclosed characters
+            r'[\u2600-\u26FF]|'          # Misc symbols
+            r'[\u2700-\u27BF]|'          # Dingbats
+            r'[\u2B50-\u2B55]|'          # Stars and circles (⭐ etc.)
+            r'[\u2934-\u2935]|'          # Arrows
+            r'[\u3030\u303D]|'           # Wavy dash, part alternation mark
+            r'[\uFE0F]|'                 # Variation selector
+            r'[\U0001F600-\U0001F64F]|'  # Emoticons
+            r'[\U0001F680-\U0001F6FF]|'  # Transport & map symbols
+            r'[\U0001F1E0-\U0001F1FF]'   # Flags
+        )
     
-    def analyze(self, message: str, user_id: int, user_join_date: Optional[datetime] = None) -> Dict:
+    def analyze(self, message: str, user_id: int, user_join_date: Optional[datetime] = None,
+                entities: Optional[List] = None) -> Dict:
         """
         Analyze a message for spam indicators
+        
+        Args:
+            message: The message text
+            user_id: Telegram user ID
+            user_join_date: When user joined the group (for new user detection)
+            entities: Telegram message entities (for detecting hyperlinks, etc.)
         
         Returns:
             Dict with spam score, reasons, and recommended action
@@ -123,7 +146,7 @@ class SpamDetector:
         message_normalized = re.sub(r'\s+', ' ', message_normalized)
         
         # 0. INSTANT BAN CHECK - Adult content, casino, aggressive DM patterns
-        instant_ban_result = self._check_instant_ban(message, message_lower, message_normalized)
+        instant_ban_result = self._check_instant_ban(message, message_lower, message_normalized, entities)
         if instant_ban_result['instant_ban']:
             result['is_spam'] = True
             result['instant_ban'] = True
@@ -223,16 +246,40 @@ class SpamDetector:
         
         return result
     
-    def _check_instant_ban(self, message: str, message_lower: str, message_normalized: str) -> Dict:
+    def _check_instant_ban(self, message: str, message_lower: str, message_normalized: str,
+                           entities: Optional[List] = None) -> Dict:
         """
         Check for patterns that warrant INSTANT BAN (no warnings).
         These are non-negotiable violations.
+        
+        Args:
+            message: Original message text
+            message_lower: Lowercase message
+            message_normalized: Normalized message (special chars removed)
+            entities: Telegram message entities (for detecting hyperlinks)
         """
         result = {'instant_ban': False, 'reasons': [], 'triggers': []}
         
         # Normalize text to detect Cyrillic obfuscation (х→x, р→p, о→o, etc.)
         message_deobfuscated = self._normalize_text(message)
         message_deobfuscated_lower = message_deobfuscated.lower()
+        
+        # 0. HYPERLINK + EMOJI CHECK (text_link entities with 2+ emojis = instant ban)
+        # This catches hidden links disguised with pretty emoji-laden text
+        if entities:
+            has_hyperlink = any(
+                entity.get('type') in ['text_link', 'url'] 
+                for entity in entities
+            )
+            if has_hyperlink:
+                # Count emojis in message
+                emoji_matches = self.emoji_pattern.findall(message)
+                emoji_count = len(emoji_matches)
+                if emoji_count > 2:
+                    result['instant_ban'] = True
+                    result['reasons'].append(f"Hyperlinked text with emojis ({emoji_count} emojis)")
+                    result['triggers'].append("hyperlink_emoji_spam")
+                    return result
         
         # 1. Adult/Porn content (obfuscated or not)
         # Check both original and deobfuscated versions

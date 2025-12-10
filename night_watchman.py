@@ -304,6 +304,9 @@ class NightWatchman:
             text = message.get('text', '') or message.get('caption', '')
             message_id = message.get('message_id')
             
+            # Get message entities (for detecting hyperlinks, mentions, etc.)
+            entities = message.get('entities', []) or message.get('caption_entities', [])
+            
             # Track message author for admin enhancement feature
             if chat_id and message_id and user_id:
                 message_key = f"{chat_id}_{message_id}"
@@ -376,7 +379,7 @@ class NightWatchman:
                     else:
                         # CRITICAL: Analyze forwarded message for spam BEFORE taking action
                         # This catches casino spam, bot links, porn, etc. in forwards
-                        forward_result = self.detector.analyze(text, user_id, None)
+                        forward_result = self.detector.analyze(text, user_id, None, entities)
                         
                         # If forwarded message contains instant-ban content, BAN immediately
                         if forward_result.get('instant_ban'):
@@ -441,7 +444,7 @@ class NightWatchman:
             join_date = self.member_join_dates.get(member_key)
             
             # Analyze message for spam and bad language
-            result = self.detector.analyze(text, user_id, join_date)
+            result = self.detector.analyze(text, user_id, join_date, entities)
             
             # Handle INSTANT BAN cases (porn, casino, aggressive DM, etc.)
             if result.get('instant_ban'):
