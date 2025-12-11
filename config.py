@@ -209,8 +209,14 @@ class Config:
     BLOCK_FORWARDS = True
     FORWARD_ALLOW_ADMINS = True
     FORWARD_ALLOW_VIP = True
-    FORWARD_INSTANT_MUTE = True  # Mute user immediately on forward (not just warn)
-    FORWARD_BAN_ON_REPEAT = True  # Ban if user forwards again after mute
+    FORWARD_INSTANT_BAN = True  # INSTANT BAN on forward (not mute) - stops spam immediately
+    FORWARD_INSTANT_MUTE = False  # Mute user immediately on forward (legacy, use INSTANT_BAN instead)
+    FORWARD_BAN_ON_REPEAT = True  # Ban if user forwards again after mute (if not using instant ban)
+    
+    # Premium/Custom Emoji Spam Detection
+    PREMIUM_EMOJI_SPAM_ENABLED = True
+    PREMIUM_EMOJI_THRESHOLD = 3  # 3+ custom/premium emojis = spam (normal users rarely use this many)
+    PREMIUM_EMOJI_NEW_USER_BAN = True  # Instant ban new users (<48h) with premium emoji spam
     
     # Welcome Message
     SEND_WELCOME_MESSAGE = False  # Don't auto-send welcome (users can use /guidelines)

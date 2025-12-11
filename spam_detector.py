@@ -285,7 +285,21 @@ class SpamDetector:
         message_deobfuscated = self._normalize_text(message)
         message_deobfuscated_lower = message_deobfuscated.lower()
         
-        # 0. HYPERLINK + EMOJI CHECK (text_link entities with 2+ emojis = instant ban)
+        # 0. PREMIUM/CUSTOM EMOJI CHECK
+        # Spammers use premium accounts to send custom emojis that bypass text detection
+        if entities and getattr(self.config, 'PREMIUM_EMOJI_SPAM_ENABLED', True):
+            custom_emoji_count = sum(
+                1 for entity in entities 
+                if entity.get('type') == 'custom_emoji'
+            )
+            threshold = getattr(self.config, 'PREMIUM_EMOJI_THRESHOLD', 5)
+            if custom_emoji_count >= threshold:
+                result['instant_ban'] = True
+                result['reasons'].append(f"Premium emoji spam ({custom_emoji_count} custom emojis)")
+                result['triggers'].append("premium_emoji_spam")
+                return result
+        
+        # 1. HYPERLINK + EMOJI CHECK (text_link entities with 2+ emojis = instant ban)
         # This catches hidden links disguised with pretty emoji-laden text
         if entities:
             has_hyperlink = any(

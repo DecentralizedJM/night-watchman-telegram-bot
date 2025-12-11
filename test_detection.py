@@ -64,6 +64,15 @@ money_emoji_tests = [
     ('Made some good trades today 💵💵', 'Money emojis from trusted user', 50, False, False),  # Should be SAFE
 ]
 
+# Premium emoji tests - custom_emoji entities = spam (instant ban)
+premium_emoji_tests = [
+    # (message, entities, expected_desc, should_ban)
+    ('🟧🆗0⃣0⃣ 🟧🟧🟧🟧🟧', [{'type': 'custom_emoji'}, {'type': 'custom_emoji'}, {'type': 'custom_emoji'}, {'type': 'custom_emoji'}], 'Premium emoji spam (4 custom emojis)', True),
+    ('Check out my cool premium emojis!', [{'type': 'custom_emoji'}, {'type': 'custom_emoji'}, {'type': 'custom_emoji'}], 'Premium spam (3 custom emojis - threshold)', True),
+    ('Nice trade 👍', [{'type': 'custom_emoji'}], 'Single premium emoji - should be SAFE', False),
+    ('Hello everyone! 😊', [], 'Regular emojis - no custom_emoji', False),
+]
+
 print('=' * 60)
 print('TESTING SPAM DETECTION (Should be CAUGHT)')
 print('=' * 60)
@@ -143,6 +152,34 @@ for msg, expected, user_rep, is_first_msg, should_be_spam in money_emoji_tests:
         if is_spam:
             all_passed = False
             print(f'❌ FALSE POSITIVE [{expected}]')
+            print(f'   Message: {msg}')
+            print(f'   Reasons: {result.get("reasons", [])}')
+        else:
+            print(f'✅ SAFE [{expected}]')
+            print(f'   Message: {msg}')
+    print()
+
+print('=' * 60)
+print('TESTING PREMIUM EMOJI DETECTION')
+print('=' * 60)
+
+for msg, entities, expected, should_ban in premium_emoji_tests:
+    result = detector.analyze(msg, user_id=88888, entities=entities)
+    is_ban = result.get('instant_ban')
+    
+    if should_ban:
+        if is_ban:
+            print(f'🚨 INSTANT BAN [{expected}]')
+            print(f'   Message: {msg}')
+            print(f'   Reasons: {result.get("reasons", [])}')
+        else:
+            all_passed = False
+            print(f'❌ MISSED [{expected}]')
+            print(f'   Message: {msg}')
+    else:
+        if is_ban:
+            all_passed = False
+            print(f'❌ FALSE POSITIVE - BANNED [{expected}]')
             print(f'   Message: {msg}')
             print(f'   Reasons: {result.get("reasons", [])}')
         else:

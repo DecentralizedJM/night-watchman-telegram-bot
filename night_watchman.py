@@ -437,7 +437,26 @@ class NightWatchman:
                         # Delete the forwarded message immediately
                         await self._delete_message(chat_id, message_id)
                         
-                        # Track forward violations
+                        # INSTANT BAN for forwards (if enabled)
+                        if getattr(self.config, 'FORWARD_INSTANT_BAN', False):
+                            banned = await self._ban_user(chat_id, user_id)
+                            if banned:
+                                self.stats['users_banned'] += 1
+                                ban_msg = self._get_ban_message(user_name, username, 'forward')
+                                await self._send_message(chat_id, ban_msg)
+                                # Report to admin
+                                if self.admin_chat_id:
+                                    await self._send_message(
+                                        self.admin_chat_id,
+                                        f"📤 <b>Forward Spam - INSTANT BAN</b>\n\n"
+                                        f"👤 User: {user_name} (@{username or 'N/A'})\n"
+                                        f"🆔 ID: <code>{user_id}</code>\n"
+                                        f"📝 Message: <code>{text[:200] if text else '[no text]'}</code>\n"
+                                        f"✅ Action: Instant Ban"
+                                    )
+                            return
+                        
+                        # Legacy: Track forward violations (if not using instant ban)
                         violations = self.detector.add_forward_violation(user_id)
                         
                         if violations >= 2 or self.config.FORWARD_BAN_ON_REPEAT:
