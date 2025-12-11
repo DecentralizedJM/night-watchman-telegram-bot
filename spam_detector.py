@@ -115,7 +115,8 @@ class SpamDetector:
         )
     
     def analyze(self, message: str, user_id: int, user_join_date: Optional[datetime] = None,
-                entities: Optional[List] = None) -> Dict:
+                entities: Optional[List] = None, user_rep: int = 0, 
+                is_first_message: bool = False) -> Dict:
         """
         Analyze a message for spam indicators
         
@@ -124,6 +125,8 @@ class SpamDetector:
             user_id: Telegram user ID
             user_join_date: When user joined the group (for new user detection)
             entities: Telegram message entities (for detecting hyperlinks, etc.)
+            user_rep: User's reputation points (0 = new/untrusted)
+            is_first_message: True if this is user's first message in group
         
         Returns:
             Dict with spam score, reasons, and recommended action
@@ -155,6 +158,17 @@ class SpamDetector:
             result['reasons'] = instant_ban_result['reasons']
             result['details']['instant_ban_triggers'] = instant_ban_result['triggers']
             return result  # No further analysis needed
+        
+        # 0.5 MONEY EMOJI CHECK - Flag new/low-rep users using money emojis
+        if self.config.MONEY_EMOJI_CHECK_ENABLED:
+            money_result = self._check_money_emojis(message, user_id, user_join_date, user_rep, is_first_message)
+            if money_result['is_spam']:
+                result['is_spam'] = True
+                result['spam_score'] = 0.8
+                result['action'] = self.config.MONEY_EMOJI_ACTION
+                result['reasons'] = money_result['reasons']
+                result['details']['money_emoji_spam'] = True
+                return result
         
         # 1. Keyword detection
         keyword_score, matched_keywords = self._check_keywords(message_lower)
@@ -383,6 +397,73 @@ class SpamDetector:
                 result['reasons'].append("Promotional spam (emoji overload + promo keywords)")
                 result['triggers'].append("emoji_promo_spam")
                 return result
+        
+        return result
+    
+    def _check_money_emojis(self, message: str, user_id: int, 
+                            user_join_date: Optional[datetime], 
+                            user_rep: int, is_first_message: bool) -> Dict:
+        """
+        Check for money/dollar emojis from new or low-reputation users.
+        These emojis are commonly used in scam/promo messages.
+        
+        Args:
+            message: The message text
+            user_id: Telegram user ID
+            user_join_date: When user joined the group
+            user_rep: User's reputation points
+            is_first_message: True if this is user's first message
+        
+        Returns:
+            Dict with is_spam flag and reasons
+        """
+        result = {'is_spam': False, 'reasons': []}
+        
+        # Count money emojis in message
+        money_emojis = getattr(self.config, 'MONEY_EMOJIS', 
+                               ['💰', '💵', '💸', '🤑', '💲', '💳', '🏧', '💎', '🪙'])
+        money_emoji_count = sum(1 for char in message if char in money_emojis)
+        
+        threshold = getattr(self.config, 'MONEY_EMOJI_THRESHOLD', 2)
+        
+        if money_emoji_count < threshold:
+            return result  # Not enough money emojis
+        
+        # Check if user is "suspicious" (new, low rep, or first message)
+        is_suspicious = False
+        suspicion_reasons = []
+        
+        # Check 1: First message ever
+        if is_first_message:
+            is_suspicious = True
+            suspicion_reasons.append("first message")
+        
+        # Check 2: Low reputation (0 or below minimum)
+        min_rep = getattr(self.config, 'MONEY_EMOJI_MIN_REP', 1)
+        if user_rep < min_rep:
+            is_suspicious = True
+            suspicion_reasons.append(f"low reputation ({user_rep})")
+        
+        # Check 3: New user (joined within threshold hours)
+        if user_join_date:
+            now = datetime.now(timezone.utc)
+            # Ensure join_date is timezone-aware
+            if user_join_date.tzinfo is None:
+                user_join_date = user_join_date.replace(tzinfo=timezone.utc)
+            
+            hours_since_join = (now - user_join_date).total_seconds() / 3600
+            threshold_hours = getattr(self.config, 'MONEY_EMOJI_NEW_USER_HOURS', 48)
+            
+            if hours_since_join < threshold_hours:
+                is_suspicious = True
+                suspicion_reasons.append(f"new user ({int(hours_since_join)}h old)")
+        
+        if is_suspicious:
+            result['is_spam'] = True
+            emojis_found = [char for char in message if char in money_emojis][:5]  # Show first 5
+            result['reasons'].append(
+                f"Money emoji spam ({money_emoji_count}x {''.join(emojis_found)}) from {', '.join(suspicion_reasons)}"
+            )
         
         return result
     

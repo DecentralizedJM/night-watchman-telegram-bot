@@ -54,6 +54,16 @@ safe_messages = [
     ('mudrex promo code kahan milega?', 'Hindi promo question'),
 ]
 
+# Money emoji tests - should be caught for NEW/LOW-REP users only
+money_emoji_tests = [
+    # (message, expected_desc, user_rep, is_first_message, should_be_spam)
+    ('💰💰 Make money fast! 💵💵💵', 'Money spam from new user', 0, True, True),
+    ('Get rich 💸💸💸 with this method!', 'Money spam from 0-rep user', 0, False, True),
+    ('🤑🤑 Easy profits await you!', 'Money spam first message', 0, True, True),
+    ('Thanks for the help! 💰', 'Single money emoji - trusted user', 10, False, False),  # Should be SAFE
+    ('Made some good trades today 💵💵', 'Money emojis from trusted user', 50, False, False),  # Should be SAFE
+]
+
 print('=' * 60)
 print('TESTING SPAM DETECTION (Should be CAUGHT)')
 print('=' * 60)
@@ -95,6 +105,49 @@ for msg, expected in safe_messages:
     else:
         print(f'✅ SAFE [{expected}]')
         print(f'   Message: {msg}')
+    print()
+
+print('=' * 60)
+print('TESTING MONEY EMOJI DETECTION')
+print('=' * 60)
+
+from datetime import datetime, timezone, timedelta
+
+for msg, expected, user_rep, is_first_msg, should_be_spam in money_emoji_tests:
+    # For new/low-rep users: joined 1 hour ago
+    # For trusted users: joined 30 days ago
+    if user_rep >= 10:
+        join_date = datetime.now(timezone.utc) - timedelta(days=30)
+    else:
+        join_date = datetime.now(timezone.utc) - timedelta(hours=1)
+    
+    result = detector.analyze(
+        msg, user_id=99999, 
+        user_join_date=join_date, 
+        entities=None,
+        user_rep=user_rep,
+        is_first_message=is_first_msg
+    )
+    is_spam = result.get('is_spam')
+    
+    if should_be_spam:
+        if is_spam:
+            print(f'🚨 CAUGHT [{expected}]')
+            print(f'   Message: {msg}')
+            print(f'   Reasons: {result.get("reasons", [])}')
+        else:
+            all_passed = False
+            print(f'❌ MISSED [{expected}]')
+            print(f'   Message: {msg}')
+    else:
+        if is_spam:
+            all_passed = False
+            print(f'❌ FALSE POSITIVE [{expected}]')
+            print(f'   Message: {msg}')
+            print(f'   Reasons: {result.get("reasons", [])}')
+        else:
+            print(f'✅ SAFE [{expected}]')
+            print(f'   Message: {msg}')
     print()
 
 print('=' * 60)

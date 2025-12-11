@@ -249,6 +249,34 @@ class ReputationTracker:
             'points_to_next': max(0, next_level - points) if next_level > 0 else 0
         }
     
+    def get_user_rep(self, user_id: int) -> Dict:
+        """
+        Get user's reputation data including points, level, and message count.
+        Used for spam detection (money emoji check for new users).
+        """
+        key = self._get_user_key(user_id)
+        user_data = self.data['users'].get(key, {})
+        
+        points = user_data.get('points', 0)
+        level_name, emoji, next_level = self.get_level(user_id)
+        
+        # Count total messages from daily activity
+        total_messages = 0
+        if 'daily_activity' in user_data:
+            for day_data in user_data['daily_activity'].values():
+                total_messages += day_data.get('messages', 0)
+        
+        return {
+            'user_id': user_id,
+            'points': points,
+            'level': level_name,
+            'emoji': emoji,
+            'warnings': user_data.get('warnings', 0),
+            'total_messages': total_messages,
+            'joined': user_data.get('joined'),
+            'last_active': user_data.get('last_active')
+        }
+    
     def can_post_links(self, user_id: int) -> bool:
         """DEPRECATED: Links allowed for everyone now. Kept for compatibility."""
         return True  # No restrictions based on reputation

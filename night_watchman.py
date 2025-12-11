@@ -574,8 +574,20 @@ class NightWatchman:
             member_key = f"{chat_id}_{user_id}"
             join_date = self.member_join_dates.get(member_key)
             
+            # Get user reputation for money emoji check
+            user_rep = 0
+            is_first_message = False
+            if self.config.REPUTATION_ENABLED:
+                user_rep_data = self.reputation.get_user_rep(user_id)
+                user_rep = user_rep_data.get('points', 0)
+                # Check if this is their first tracked message (no activity yet)
+                is_first_message = user_rep_data.get('total_messages', 0) == 0
+            
             # Analyze message for spam and bad language
-            result = self.detector.analyze(text, user_id, join_date, entities)
+            result = self.detector.analyze(
+                text, user_id, join_date, entities,
+                user_rep=user_rep, is_first_message=is_first_message
+            )
             
             # Handle INSTANT BAN cases (porn, casino, aggressive DM, etc.)
             if result.get('instant_ban'):

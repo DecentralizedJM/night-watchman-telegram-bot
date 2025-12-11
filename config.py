@@ -98,6 +98,17 @@ class Config:
         "promo code for mudrex",
     ]
     
+    # Money/Dollar emojis - suspicious when used by new users
+    # These are often used in scam/promo messages
+    MONEY_EMOJIS = ['💰', '💵', '💸', '🤑', '💲', '💳', '🏧', '💎', '🪙', '💴', '💶', '💷']
+    
+    # New user money emoji detection settings
+    MONEY_EMOJI_CHECK_ENABLED = True
+    MONEY_EMOJI_NEW_USER_HOURS = 48  # Check users who joined within this time
+    MONEY_EMOJI_MIN_REP = 1  # Users with less than this rep are flagged
+    MONEY_EMOJI_THRESHOLD = 2  # Number of money emojis to trigger (2+ = suspicious)
+    MONEY_EMOJI_ACTION = "delete_and_warn"  # "delete", "delete_and_warn", "delete_and_mute"
+    
     # Suspicious URL patterns
     SUSPICIOUS_DOMAINS = [
         "bit.ly", "tinyurl", "t.co", "goo.gl",  # URL shorteners (often abused)
