@@ -2,7 +2,14 @@
 
 24/7 Telegram watchdog & moderation bot. Protects your groups from spam, scams, bad language, and more.
 
-**Latest Release:** v1.1.3 (December 10, 2025) - 🔗 Hyperlink + Emoji Detection
+**Latest Release:** v1.1.4 (December 11, 2025) - 🐛 Bug Fixes & Memory Management
+- **FIXED:** `/rep` command in DM no longer falsely claims everyone is an admin
+- **FIXED:** Memory leaks - added periodic cleanup for in-memory caches
+- **IMPROVED:** Test suite restructured into `tests/` directory
+- Automatic cache cleanup every 30 minutes (message_authors, enhanced_messages, etc.)
+- Prevents unbounded memory growth on long-running instances
+
+**Previous Release:** v1.1.3 (December 10, 2025) - 🔗 Hyperlink + Emoji Detection
 - **NEW RULE:** Messages with hyperlinked text (text_link) + more than 2 emojis = instant ban
 - Catches disguised spam links hidden behind pretty emoji-laden text
 - Improved emoji detection pattern for better coverage
@@ -11,8 +18,6 @@
 - **CRITICAL FIX:** Forwarded messages now analyzed for spam content before taking action
 - Forwarded casino/bot spam now triggers instant ban (not just mute)
 - Added new instant-ban keywords: "winning streak", "top prize", "telegram bonus", etc.
-- Deobfuscation now applied to instant ban keyword matching
-- Enhanced admin reports show when spam was forwarded
 
 **Previous Release:** v1.1.1 (December 9, 2025) - 🛡️ Aggressive Anti-Spam Overhaul
 - Fixed all 6 reported scammer detection failures
@@ -63,25 +68,35 @@
 - `/rep` - Check your reputation
 - `/leaderboard` - Top 10 users by reputation
 
-## 🚀 Recent Updates (v1.1.2)
+## 🚀 Recent Updates (v1.1.4)
 
-### 📤 Forwarded Spam Detection Fix
-**Problem:** Forwarded spam messages (like casino/bot promotions) were only triggering mute, not being analyzed for actual spam content.
+### � Bug Fixes
+- **`/rep` in DM fixed** - No longer shows "You're an admin!" to everyone
+- In DM context, `/rep` now correctly shows your actual reputation
 
-**Fix:** Forwarded messages are now analyzed for spam **before** taking forward-blocking action:
-- If forwarded message contains instant-ban content → **immediate ban**
-- Casino spam, bot links, porn, etc. in forwards now properly detected
-- Admin reports now indicate when the spam was a forwarded message
+### 🧹 Memory Management
+- Added `_cleanup_caches()` method for periodic memory cleanup
+- Runs automatically every 30 minutes during normal operation
+- Prevents unbounded growth of in-memory dictionaries:
+  - `message_authors` - capped at 5,000 entries
+  - `enhanced_messages` - capped at 2,000 entries
+  - `report_cooldowns` - expired entries removed
+  - `media_timestamps` - entries older than 1 hour removed
+  - `member_join_dates` - entries older than 7 days removed
 
-### 🆕 New Instant-Ban Keywords
-- `winning streak`, `top prize`, `grab bonus`, `telegram bonus`
-- Better detection of "$X FREE" patterns
+### 🧪 Testing Improvements
+- Restructured tests into `tests/` directory
+- Added pytest-compatible test functions
+- Run tests with: `python tests/test_spam_detection.py`
 
-### 🔧 Technical Improvements
-- Deobfuscation (Cyrillic→ASCII) now applied to instant ban keyword matching
-- Forwarded spam indicator in admin reports
+## Previous Updates (v1.1.3)
 
-## Previous Updates (v1.1.1)
+### � Hyperlink + Emoji Detection
+**Problem:** Spammers were hiding malicious links behind pretty emoji-laden text.
+
+**Fix:** Messages with hyperlinked text (text_link entity) + more than 2 emojis now trigger instant ban.
+
+## Previous Updates (v1.1.2)
 
 ### 🎯 Fixed All 6 Scammer Detection Failures
 1. **Cyrillic-obfuscated porn** - Deobfuscates Cyrillic lookalikes (х→x, р→p, о→o)
@@ -151,6 +166,7 @@ python3 night_watchman.py
 | `/ban` | Ban a user permanently |
 | `/mute` | Mute a user for 24 hours |
 | `/unwarn` | Clear warnings for a user |
+| `/enhance` | Award +15 reputation points (reply to message) |
 | `/cas` | Check user against CAS anti-spam database |
 | `/stats` | Show detailed bot statistics |
 
@@ -219,19 +235,24 @@ The bot needs these admin permissions in the group:
 ### Earning Points
 | Action | Points |
 |--------|--------|
-| Daily activity | +1 |
+| Daily activity | +5 |
 | Valid spam report | +10 |
+| 7-day streak bonus | +5 |
+| 30-day streak bonus | +10 |
+| Admin enhancement (`/enhance`) | +15 |
 | Warning received | -10 |
 | Muted | -25 |
 | Unmuted (false positive) | +15 |
 
-### Levels
-| Level | Points | Perks |
-|-------|--------|-------|
-| 🆕 Newcomer | 0-50 | Standard restrictions |
-| 🌟 Member | 51-200 | Can post links |
-| ⭐ Trusted | 201-500 | Bypass some restrictions |
-| 💎 VIP | 501+ | Can forward messages |
+### Levels (Display Only)
+| Level | Points | Description |
+|-------|--------|-------------|
+| 🆕 Newcomer | 0-50 | New to the community |
+| 🌟 Member | 51-200 | Active participant |
+| ⭐ Trusted | 201-500 | Regular contributor |
+| 💎 VIP | 501+ | Top community member |
+
+> **Note:** Levels are for display/recognition only. All moderation rules apply equally to everyone except admins.
 
 ---
 
