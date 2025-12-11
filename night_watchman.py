@@ -1123,12 +1123,18 @@ I am a spam detection bot that protects Telegram groups from:
             await self._handle_analytics_command(chat_id, user_id, text)
         
         elif text.startswith('/rep'):
-            # Admins don't have reputation - they're above the system
-            await self._send_message(
-                chat_id, 
-                "👑 <b>You're an admin!</b>\n\nAdmins don't participate in the reputation system - you're already at the top! 🎖️",
-                auto_delete=False
-            )
+            # In DM, we can't check admin status (no group context)
+            # Show user their reputation if enabled
+            if self.config.REPUTATION_ENABLED:
+                # Get username from user data if possible
+                msg = self.reputation.format_user_rep(user_id, None, "You")
+                await self._send_message(chat_id, msg, auto_delete=False)
+            else:
+                await self._send_message(
+                    chat_id,
+                    "ℹ️ Reputation system is not enabled.",
+                    auto_delete=False
+                )
         
         elif text.startswith('/leaderboard'):
             # Show leaderboard with optional days filter
