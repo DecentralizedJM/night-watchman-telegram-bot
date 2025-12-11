@@ -260,6 +260,13 @@ class SpamDetector:
         """
         result = {'instant_ban': False, 'reasons': [], 'triggers': []}
         
+        # FIRST: Check whitelist - legitimate questions should NEVER trigger ban
+        if hasattr(self.config, 'WHITELISTED_PHRASES'):
+            for phrase in self.config.WHITELISTED_PHRASES:
+                if phrase.lower() in message_lower:
+                    # This is a legitimate question, skip ALL instant ban checks
+                    return result
+        
         # Normalize text to detect Cyrillic obfuscation (х→x, р→p, о→o, etc.)
         message_deobfuscated = self._normalize_text(message)
         message_deobfuscated_lower = message_deobfuscated.lower()
@@ -296,16 +303,39 @@ class SpamDetector:
             result['triggers'].append("telegram_bot_link")
             return result
         
-        # 3. Casino/Betting/Promo code spam
-        casino_keywords = ['1win', 'casino', 'promo code', 'welcome bonus', 'big wins', 
-                          'jackpot', 'free spins', 'betting', 'slot machine',
-                          'on your balance', 'activate the promo', 'activate promo',
-                          'play anywhere', 'get $', 'your balance']
-        for keyword in casino_keywords:
+        # 3. Casino/Betting spam - CONTEXTUAL detection
+        # Definite casino spam (instant ban on these alone)
+        definite_casino = [
+            '1win', '1xbet', 'xwin', '22bet', 'melbet', 'mostbet', 'linebet',
+            'casino bonus', 'free spins', 'slot machine', 'betting bonus',
+            'on your balance', 'activate the promo', 'activate promo',
+            'play anywhere', 'get $', 'your balance', 'promocasbot',
+            'bet220', 'bet200', 'bet100', '$220', '$200 free', '$100 free'
+        ]
+        for keyword in definite_casino:
             if keyword in message_lower or keyword in message_deobfuscated_lower:
                 result['instant_ban'] = True
                 result['reasons'].append(f"Casino/betting spam detected: {keyword}")
                 result['triggers'].append("casino_spam")
+                return result
+        
+        # Contextual casino detection: "promo code" only banned if combined with spam signals
+        # (This prevents false positives like "how to get promo codes in mudrex")
+        has_promo_code = 'promo code' in message_lower or 'promo code' in message_deobfuscated_lower
+        if has_promo_code:
+            spam_signals = [
+                'jackpot', 'casino', 'betting', 'win', 'bonus', 'free', 
+                'balance', 'activate', '$', 'play', '🎰', '💰', '🎲'
+            ]
+            # Check for bot links or telegram links
+            has_bot_link = '@' in message and ('bot' in message_lower or 'win' in message_lower)
+            has_spam_signal = any(sig in message_lower for sig in spam_signals)
+            has_many_emojis = len(self.emoji_pattern.findall(message)) >= 3
+            
+            if has_bot_link or (has_spam_signal and has_many_emojis):
+                result['instant_ban'] = True
+                result['reasons'].append("Promotional spam detected: promo code + spam signals")
+                result['triggers'].append("contextual_casino_spam")
                 return result
         
         # 4. Aggressive DM patterns (instant ban)

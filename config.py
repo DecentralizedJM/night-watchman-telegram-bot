@@ -75,12 +75,27 @@ class Config:
         # Adult/Porn
         "xxx", "porn", "p-o-r-n", "x x x", "p o r n",
         "onlyfans", "only fans", "nudes",
-        # Casino/Betting
-        "1win", "casino", "promo code", "welcome bonus",
-        "big wins", "jackpot", "free spins",
+        # Casino/Betting (specific, not generic)
+        "1win", "1xbet", "xwin", "22bet", "melbet", "mostbet",
+        "casino bonus", "welcome bonus", "free spins",
         "winning streak", "top prize", "grab bonus", "telegram bonus",
+        "on your balance", "get your balance", "activate promo",
+        "play anywhere", "bet220", "promocasbot",
         # Scam patterns
         "dm me now", "inbox me", "message me now",
+    ]
+    
+    # Whitelisted terms - NEVER trigger spam even if they contain keywords
+    # This prevents false positives for legitimate questions
+    WHITELISTED_PHRASES = [
+        "mudrex promo",
+        "promo code in mudrex",
+        "promo codes in mudrex", 
+        "mudrex referral",
+        "how to get promo",
+        "where to find promo",
+        "any promo code",
+        "promo code for mudrex",
     ]
     
     # Suspicious URL patterns
