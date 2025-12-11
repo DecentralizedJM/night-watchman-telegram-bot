@@ -75,14 +75,20 @@ class NightWatchman:
         # Track report cooldowns
         self.report_cooldowns: Dict[int, datetime] = {}  # user_id -> last_report_time
         
-        # Track message authors for admin enhancement
+        # Track message authors for admin enhancement (with size limit to prevent memory leak)
         self.message_authors: Dict[str, int] = {}  # f"{chat_id}_{message_id}" -> user_id
+        self.MESSAGE_AUTHORS_MAX_SIZE = 5000  # Max entries before cleanup
         
         # Track media messages for spam detection (rate limiting)
         self.media_timestamps: Dict[int, List[datetime]] = {}  # user_id -> [media_send_times]
         
-        # Track messages that received admin enhancement (prevent duplicates)
+        # Track messages that received admin enhancement (prevent duplicates, with size limit)
         self.enhanced_messages: Dict[str, bool] = {}  # f"{chat_id}_{message_id}" -> True
+        self.ENHANCED_MESSAGES_MAX_SIZE = 2000  # Max entries before cleanup
+        
+        # Last cleanup timestamp
+        self._last_cleanup = datetime.now(timezone.utc)
+        self.CLEANUP_INTERVAL_MINUTES = 30  # Run cleanup every 30 minutes
         
         # Get bot's own user ID
         self.bot_user_id = None
@@ -171,6 +177,94 @@ class NightWatchman:
         
         return template.format(name=display_name)
     
+    def _cleanup_caches(self):
+        """
+        Periodic cleanup of in-memory caches to prevent memory leaks.
+        Called periodically from _handle_update.
+        """
+        now = datetime.now(timezone.utc)
+        cleaned = False
+        
+        # 1. Cleanup message_authors (keep only recent entries)
+        if len(self.message_authors) > self.MESSAGE_AUTHORS_MAX_SIZE:
+            # Keep the most recent half
+            keep_count = self.MESSAGE_AUTHORS_MAX_SIZE // 2
+            self.message_authors = dict(list(self.message_authors.items())[-keep_count:])
+            logger.info(f"🧹 Cleaned message_authors cache: kept {keep_count} entries")
+            cleaned = True
+        
+        # 2. Cleanup enhanced_messages (keep only recent entries)
+        if len(self.enhanced_messages) > self.ENHANCED_MESSAGES_MAX_SIZE:
+            keep_count = self.ENHANCED_MESSAGES_MAX_SIZE // 2
+            self.enhanced_messages = dict(list(self.enhanced_messages.items())[-keep_count:])
+            logger.info(f"🧹 Cleaned enhanced_messages cache: kept {keep_count} entries")
+            cleaned = True
+        
+        # 3. Cleanup report_cooldowns (remove expired entries)
+        expired_cooldowns = [
+            user_id for user_id, last_time in self.report_cooldowns.items()
+            if (now - last_time).total_seconds() > self.config.REPORT_COOLDOWN_SECONDS * 2
+        ]
+        for user_id in expired_cooldowns:
+            del self.report_cooldowns[user_id]
+        if expired_cooldowns:
+            logger.debug(f"🧹 Cleaned {len(expired_cooldowns)} expired report cooldowns")
+            cleaned = True
+        
+        # 4. Cleanup media_timestamps (remove old entries)
+        one_hour_ago = now - timedelta(hours=1)
+        users_to_clean = []
+        for user_id, timestamps in self.media_timestamps.items():
+            self.media_timestamps[user_id] = [t for t in timestamps if t > one_hour_ago]
+            if not self.media_timestamps[user_id]:
+                users_to_clean.append(user_id)
+        for user_id in users_to_clean:
+            del self.media_timestamps[user_id]
+        if users_to_clean:
+            logger.debug(f"🧹 Cleaned media_timestamps for {len(users_to_clean)} users")
+            cleaned = True
+        
+        # 5. Cleanup recent_joins (remove empty chat entries)
+        empty_chats = [chat_id for chat_id, joins in self.recent_joins.items() if not joins]
+        for chat_id in empty_chats:
+            del self.recent_joins[chat_id]
+        if empty_chats:
+            logger.debug(f"🧹 Cleaned {len(empty_chats)} empty recent_joins entries")
+            cleaned = True
+        
+        # 6. Cleanup users_without_username (remove entries older than grace period)
+        grace_hours = getattr(self.config, 'USERNAME_GRACE_PERIOD_HOURS', 24)
+        cutoff = now - timedelta(hours=grace_hours * 2)
+        expired_username_entries = [
+            key for key, join_time in self.users_without_username.items()
+            if join_time < cutoff
+        ]
+        for key in expired_username_entries:
+            del self.users_without_username[key]
+        if expired_username_entries:
+            logger.debug(f"🧹 Cleaned {len(expired_username_entries)} expired username entries")
+            cleaned = True
+        
+        # 7. Cleanup member_join_dates (remove entries older than 7 days)
+        week_ago = now - timedelta(days=7)
+        old_members = []
+        for key, join_date in self.member_join_dates.items():
+            # Ensure timezone-aware comparison
+            if join_date.tzinfo is None:
+                join_date = join_date.replace(tzinfo=timezone.utc)
+            if join_date < week_ago:
+                old_members.append(key)
+        for key in old_members:
+            del self.member_join_dates[key]
+        if old_members:
+            logger.debug(f"🧹 Cleaned {len(old_members)} old member_join_dates entries")
+            cleaned = True
+        
+        if cleaned:
+            logger.info(f"🧹 Memory cleanup completed")
+        
+        self._last_cleanup = now
+    
     async def start(self):
         """Start the bot"""
         logger.info("🌙 Night Watchman starting patrol...")
@@ -230,6 +324,11 @@ class NightWatchman:
     async def _handle_update(self, update: Dict):
         """Handle incoming update"""
         try:
+            # Periodic memory cleanup (every CLEANUP_INTERVAL_MINUTES)
+            now = datetime.now(timezone.utc)
+            if (now - self._last_cleanup).total_seconds() > self.CLEANUP_INTERVAL_MINUTES * 60:
+                self._cleanup_caches()
+            
             # Handle chat_member updates (used by forum/topic groups)
             if 'chat_member' in update:
                 await self._handle_chat_member(update['chat_member'])
