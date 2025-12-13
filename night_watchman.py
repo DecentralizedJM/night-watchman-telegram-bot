@@ -451,6 +451,12 @@ class NightWatchman:
                 else:
                     logger.info(f"Command from non-admin {user_id}: {text}")
             
+            # Check for crypto/trading commands that should be redirected to Market Intelligence topic
+            if text.startswith('/') and getattr(self.config, 'CRYPTO_COMMAND_REDIRECT_ENABLED', False):
+                redirected = await self._handle_crypto_command_redirect(chat_id, user_id, user_name, text, message)
+                if redirected:
+                    return  # Command was redirected, don't process further
+            
             # Skip messages from admins (don't moderate them)
             if await self._is_admin(chat_id, user_id):
                 # Still track admin activity for stats (but they don't get rep points)
@@ -1329,6 +1335,77 @@ I am a spam detection bot that protects Telegram groups from:
             return True
         
         return False  # Command not handled
+    
+    async def _handle_crypto_command_redirect(self, chat_id: int, user_id: int, user_name: str,
+                                               text: str, message: Dict) -> bool:
+        """
+        Handle crypto/trading commands by redirecting users to the Market Intelligence topic.
+        Returns True if the command was a crypto command and was handled.
+        """
+        command = text.split()[0].lower()
+        message_id = message.get('message_id')
+        
+        # Get the message thread ID (topic ID) if in a forum/topic group
+        message_thread_id = message.get('message_thread_id')
+        
+        # Check if we're already in the Market Intelligence topic - if so, allow the command
+        market_topic_id = getattr(self.config, 'MARKET_INTELLIGENCE_TOPIC_ID', 89270)
+        if message_thread_id == market_topic_id:
+            return False  # Allow command in correct topic
+        
+        # Check if this is a Night Watchman bot command (always allowed)
+        bot_commands = getattr(self.config, 'BOT_COMMANDS', [])
+        for bot_cmd in bot_commands:
+            if command == bot_cmd.lower() or command.startswith(bot_cmd.lower() + '@'):
+                return False  # Allow bot commands everywhere
+        
+        # Check if this is a crypto/trading command
+        crypto_commands = getattr(self.config, 'CRYPTO_COMMANDS', [])
+        is_crypto_command = False
+        
+        # Direct match
+        for crypto_cmd in crypto_commands:
+            if command == crypto_cmd.lower() or command.startswith(crypto_cmd.lower() + '@'):
+                is_crypto_command = True
+                break
+        
+        # Also catch commands ending with 'usd' (like /btcusd, /ethusd, etc.)
+        if not is_crypto_command and command.endswith('usd'):
+            is_crypto_command = True
+        
+        # Catch common crypto ticker patterns (3-5 letter commands that look like tickers)
+        if not is_crypto_command:
+            import re
+            # Match patterns like /btc, /eth, /sol but not /help, /ban, /mute
+            ticker_pattern = re.compile(r'^/[a-z]{2,5}$')
+            if ticker_pattern.match(command):
+                # Exclude known bot/admin commands
+                excluded = ['/rep', '/ban', '/cas', '/help', '/warn', '/mute', '/stats']
+                if command not in excluded:
+                    # This might be a crypto ticker - check if it's not a known command
+                    is_crypto_command = True
+        
+        if not is_crypto_command:
+            return False  # Not a crypto command
+        
+        # This is a crypto command in the wrong topic - redirect!
+        logger.info(f"🔄 Redirecting crypto command '{command}' from {user_name} to Market Intelligence topic")
+        
+        # Delete the original command
+        await self._delete_message(chat_id, message_id)
+        
+        # Send redirect message
+        topic_link = getattr(self.config, 'MARKET_INTELLIGENCE_TOPIC_LINK', 'https://t.me/officialmudrex/89270')
+        topic_name = getattr(self.config, 'MARKET_INTELLIGENCE_TOPIC_NAME', 'Mudrex Market Intelligence')
+        
+        redirect_msg = getattr(self.config, 'CRYPTO_COMMAND_REDIRECT_MESSAGE', 
+            '💡 <b>Wrong topic!</b>\n\nThis command works in our <a href="{topic_link}">{topic_name}</a> topic.\n\nPlease use crypto/trading commands there! 📊')
+        
+        redirect_msg = redirect_msg.format(topic_link=topic_link, topic_name=topic_name)
+        
+        await self._send_message(chat_id, redirect_msg)
+        
+        return True  # Command was handled (redirected)
     
     async def _get_chat_admins(self, chat_id: int) -> List[Dict]:
         """Get list of chat administrators"""

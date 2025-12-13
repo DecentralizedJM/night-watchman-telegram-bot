@@ -247,6 +247,43 @@ class Config:
     # Admin Commands
     ADMIN_COMMANDS_ENABLED = True
     
+    # ==================== COMMAND ROUTING ====================
+    # Redirect crypto/trading commands to specific topic instead of warning users
+    
+    # Night Watchman bot commands (always allowed everywhere)
+    BOT_COMMANDS = [
+        '/start', '/help', '/guidelines', '/admins', '/rep', '/leaderboard',
+        '/report', '/warn', '/ban', '/mute', '/unwarn', '/enhance', '/cas',
+        '/stats', '/analytics'
+    ]
+    
+    # Crypto/trading commands that should be redirected to Market Intelligence topic
+    CRYPTO_COMMANDS = [
+        # Price commands
+        '/btc', '/eth', '/sol', '/xrp', '/bnb', '/ada', '/doge', '/dot',
+        '/matic', '/link', '/avax', '/shib', '/ltc', '/atom', '/uni',
+        '/btcusd', '/ethusd', '/solusd', '/xrpusd',
+        # Trading commands
+        '/funding', '/price', '/chart', '/ta', '/signal', '/signals',
+        '/alert', '/alerts', '/market', '/markets', '/trade', '/trading',
+        # Any command ending with 'usd' or containing coin tickers
+    ]
+    
+    # Enable crypto command redirection
+    CRYPTO_COMMAND_REDIRECT_ENABLED = True
+    
+    # Topic ID for Market Intelligence (where crypto commands should go)
+    MARKET_INTELLIGENCE_TOPIC_ID = 89270
+    MARKET_INTELLIGENCE_TOPIC_NAME = "Mudrex Market Intelligence"
+    MARKET_INTELLIGENCE_TOPIC_LINK = "https://t.me/officialmudrex/89270"
+    
+    # Message to show when redirecting crypto commands
+    CRYPTO_COMMAND_REDIRECT_MESSAGE = """💡 <b>Wrong topic!</b>
+
+This command works in our <a href="{topic_link}">{topic_name}</a> topic.
+
+Please use crypto/trading commands there! 📊"""
+    
     # Admin User IDs (can access /analytics via DM)
     # Add your Telegram user ID here
     ADMIN_USER_IDS = [
