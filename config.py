@@ -264,18 +264,30 @@ class Config:
         '/matic', '/link', '/avax', '/shib', '/ltc', '/atom', '/uni',
         '/btcusd', '/ethusd', '/solusd', '/xrpusd',
         # Trading commands
-        '/funding', '/price', '/chart', '/ta', '/signal', '/signals',
+        '/price', '/chart', '/ta', '/signal', '/signals',
         '/alert', '/alerts', '/market', '/markets', '/trade', '/trading',
         # Any command ending with 'usd' or containing coin tickers
     ]
     
+    # Funding rate commands - redirected to Futures Funding Alerts topic
+    FUNDING_COMMANDS = [
+        '/funding', '/fundingrate', '/fundingrates',
+        '/fr',  # Short for funding rate
+    ]
+    # Also match /funding_btc, /funding_eth, etc. (handled in code)
+    
     # Enable crypto command redirection
     CRYPTO_COMMAND_REDIRECT_ENABLED = True
     
-    # Topic ID for Market Intelligence (where crypto commands should go)
+    # Topic ID for Market Intelligence (where crypto price commands should go)
     MARKET_INTELLIGENCE_TOPIC_ID = 89270
     MARKET_INTELLIGENCE_TOPIC_NAME = "Mudrex Market Intelligence"
     MARKET_INTELLIGENCE_TOPIC_LINK = "https://t.me/officialmudrex/89270"
+    
+    # Topic ID for Futures Funding Alerts (where funding commands should go)
+    FUNDING_ALERTS_TOPIC_ID = 9674
+    FUNDING_ALERTS_TOPIC_NAME = "Futures Funding Alerts"
+    FUNDING_ALERTS_TOPIC_LINK = "https://t.me/officialmudrex/9674"
     
     # Message to show when redirecting crypto commands
     CRYPTO_COMMAND_REDIRECT_MESSAGE = """💡 <b>Wrong topic!</b>
@@ -283,6 +295,13 @@ class Config:
 This command works in our <a href="{topic_link}">{topic_name}</a> topic.
 
 Please use crypto/trading commands there! 📊"""
+    
+    # Message to show when redirecting funding commands
+    FUNDING_COMMAND_REDIRECT_MESSAGE = """💡 <b>Wrong topic!</b>
+
+Funding rate commands work in our <a href="{topic_link}">{topic_name}</a> topic.
+
+Please use /funding commands there! 📈"""
     
     # Admin User IDs (can access /analytics via DM)
     # Add your Telegram user ID here

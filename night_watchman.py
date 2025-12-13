@@ -1339,8 +1339,10 @@ I am a spam detection bot that protects Telegram groups from:
     async def _handle_crypto_command_redirect(self, chat_id: int, user_id: int, user_name: str,
                                                text: str, message: Dict) -> bool:
         """
-        Handle crypto/trading commands by redirecting users to the Market Intelligence topic.
-        Returns True if the command was a crypto command and was handled.
+        Handle crypto/trading commands by redirecting users to the appropriate topic.
+        - Funding commands -> Futures Funding Alerts topic
+        - Other crypto commands -> Market Intelligence topic
+        Returns True if the command was handled (redirected).
         """
         command = text.split()[0].lower()
         message_id = message.get('message_id')
@@ -1348,18 +1350,55 @@ I am a spam detection bot that protects Telegram groups from:
         # Get the message thread ID (topic ID) if in a forum/topic group
         message_thread_id = message.get('message_thread_id')
         
-        # Check if we're already in the Market Intelligence topic - if so, allow the command
-        market_topic_id = getattr(self.config, 'MARKET_INTELLIGENCE_TOPIC_ID', 89270)
-        if message_thread_id == market_topic_id:
-            return False  # Allow command in correct topic
-        
-        # Check if this is a Night Watchman bot command (always allowed)
+        # Check if this is a Night Watchman bot command (always allowed everywhere)
         bot_commands = getattr(self.config, 'BOT_COMMANDS', [])
         for bot_cmd in bot_commands:
             if command == bot_cmd.lower() or command.startswith(bot_cmd.lower() + '@'):
                 return False  # Allow bot commands everywhere
         
-        # Check if this is a crypto/trading command
+        # ===== CHECK FOR FUNDING COMMANDS FIRST =====
+        funding_commands = getattr(self.config, 'FUNDING_COMMANDS', ['/funding', '/fundingrate', '/fr'])
+        funding_topic_id = getattr(self.config, 'FUNDING_ALERTS_TOPIC_ID', 9674)
+        is_funding_command = False
+        
+        # Direct match for funding commands
+        for fund_cmd in funding_commands:
+            if command == fund_cmd.lower() or command.startswith(fund_cmd.lower() + '@'):
+                is_funding_command = True
+                break
+        
+        # Also match /funding_btc, /funding_eth, /fundingbtc, etc.
+        if not is_funding_command and (command.startswith('/funding') or command.startswith('/fr_')):
+            is_funding_command = True
+        
+        if is_funding_command:
+            # Check if already in Funding Alerts topic
+            if message_thread_id == funding_topic_id:
+                return False  # Allow in correct topic
+            
+            # Redirect to Funding Alerts topic
+            logger.info(f"🔄 Redirecting funding command '{command}' from {user_name} to Funding Alerts topic")
+            
+            await self._delete_message(chat_id, message_id)
+            
+            topic_link = getattr(self.config, 'FUNDING_ALERTS_TOPIC_LINK', 'https://t.me/officialmudrex/9674')
+            topic_name = getattr(self.config, 'FUNDING_ALERTS_TOPIC_NAME', 'Futures Funding Alerts')
+            
+            redirect_msg = getattr(self.config, 'FUNDING_COMMAND_REDIRECT_MESSAGE',
+                '💡 <b>Wrong topic!</b>\n\nFunding rate commands work in our <a href="{topic_link}">{topic_name}</a> topic.\n\nPlease use /funding commands there! 📈')
+            
+            redirect_msg = redirect_msg.format(topic_link=topic_link, topic_name=topic_name)
+            await self._send_message(chat_id, redirect_msg)
+            
+            return True  # Handled
+        
+        # ===== CHECK FOR OTHER CRYPTO COMMANDS =====
+        market_topic_id = getattr(self.config, 'MARKET_INTELLIGENCE_TOPIC_ID', 89270)
+        
+        # Check if already in Market Intelligence topic
+        if message_thread_id == market_topic_id:
+            return False  # Allow in correct topic
+        
         crypto_commands = getattr(self.config, 'CRYPTO_COMMANDS', [])
         is_crypto_command = False
         
@@ -1380,9 +1419,9 @@ I am a spam detection bot that protects Telegram groups from:
             ticker_pattern = re.compile(r'^/[a-z]{2,5}$')
             if ticker_pattern.match(command):
                 # Exclude known bot/admin commands
-                excluded = ['/rep', '/ban', '/cas', '/help', '/warn', '/mute', '/stats']
+                excluded = ['/rep', '/ban', '/cas', '/help', '/warn', '/mute', '/stats', '/fr']
                 if command not in excluded:
-                    # This might be a crypto ticker - check if it's not a known command
+                    # This might be a crypto ticker
                     is_crypto_command = True
         
         if not is_crypto_command:
