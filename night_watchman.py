@@ -2132,9 +2132,9 @@ No CAS ban record found."""
     
     async def _handle_non_indian_spam(self, chat_id: int, message_id: int, user_id: int,
                                       user_name: str, username: str, text: str, result: Dict):
-        """Handle non-Indian language spam - delete and warn/ban based on content"""
+        """Handle non-Indian language spam - delete and ban immediately"""
         detected_lang = result.get('detected_language', 'unknown')
-        has_immediate_ban = result.get('immediate_ban', False)
+        has_links = result.get('immediate_ban', False)
         
         logger.warning(f"🚫 Non-Indian language detected from {user_name} (@{username}): {detected_lang}")
         
@@ -2143,49 +2143,28 @@ No CAS ban record found."""
         if deleted:
             self.stats['messages_deleted'] += 1
         
-        # Ban immediately if it has URLs (immediate_ban flag) and auto-ban is enabled
-        if has_immediate_ban and self.config.AUTO_BAN_NON_INDIAN_SPAM:
-            banned = await self._ban_user(chat_id, user_id)
-            if banned:
-                self.stats['users_banned'] += 1
-                logger.info(f"🔨 Banned {user_name} for non-Indian language spam with links")
-                ban_msg = self._get_ban_message(user_name, username, 'scammer')
-                await self._send_message(chat_id, ban_msg)
-                
-                # Report to admin
-                if self.admin_chat_id:
-                    report = f"""🚫 <b>Non-Indian Language Spam (BANNED)</b>
-
-👤 User: {user_name} (@{username or 'N/A'})
-🆔 User ID: <code>{user_id}</code>
-💬 Chat: <code>{chat_id}</code>
-🌐 Language: {detected_lang}
-
-📝 <b>Message:</b>
-<code>{text[:300]}</code>
-
-🔨 <b>Action:</b> Banned immediately (contained links)"""
-                    await self._send_message(self.admin_chat_id, report)
-        else:
-            # Just delete and warn for non-URL foreign language messages
-            await self._send_message(
-                chat_id,
-                f"⚠️ <b>{user_name}</b>, please use English or Indian languages. Message deleted."
-            )
+        # Ban immediately for ANY non-Indian language message
+        banned = await self._ban_user(chat_id, user_id)
+        if banned:
+            self.stats['users_banned'] += 1
+            logger.info(f"🔨 Banned {user_name} for non-Indian language: {detected_lang}")
+            ban_msg = self._get_ban_message(user_name, username, 'scammer')
+            await self._send_message(chat_id, ban_msg)
             
-            # Report to admin (informational)
+            # Report to admin
             if self.admin_chat_id:
-                report = f"""⚠️ <b>Non-Indian Language Detected (DELETED)</b>
+                extra_info = " (also contained links)" if has_links else ""
+                report = f"""🚫 <b>Non-Indian Language Spam (BANNED)</b>
 
 👤 User: {user_name} (@{username or 'N/A'})
 🆔 User ID: <code>{user_id}</code>
 💬 Chat: <code>{chat_id}</code>
-🌐 Language: {detected_lang}
+🌐 Language: {detected_lang}{extra_info}
 
 📝 <b>Message:</b>
 <code>{text[:300]}</code>
 
-🗑️ <b>Action:</b> Deleted and warned"""
+� <b>Action:</b> Banned immediately"""
                 await self._send_message(self.admin_chat_id, report)
     
     async def _check_cas(self, user_id: int) -> Dict:
