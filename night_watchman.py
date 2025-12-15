@@ -16,6 +16,7 @@ from config import Config
 from spam_detector import SpamDetector
 from analytics_tracker import AnalyticsTracker
 from reputation_tracker import ReputationTracker
+from ticker_fetcher import ticker_fetcher, get_crypto_tickers
 
 load_dotenv()
 
@@ -275,8 +276,19 @@ class NightWatchman:
             self.bot_user_id = bot_info.get('id')
             logger.info(f"Bot: @{bot_info.get('username', 'unknown')} (ID: {self.bot_user_id})")
         
+        # Initialize crypto tickers from exchanges (runs in background)
+        asyncio.create_task(self._init_crypto_tickers())
+        
         # Start polling
         await self._poll_updates()
+    
+    async def _init_crypto_tickers(self):
+        """Initialize crypto tickers from exchanges."""
+        try:
+            tickers = await get_crypto_tickers()
+            logger.info(f"📊 Loaded {len(tickers)} crypto tickers from exchanges")
+        except Exception as e:
+            logger.error(f"Error initializing crypto tickers: {e}")
     
     async def _get_bot_info(self) -> Optional[Dict]:
         """Get bot information"""
@@ -1412,16 +1424,22 @@ I am a spam detection bot that protects Telegram groups from:
         if not is_crypto_command and command.endswith('usd'):
             is_crypto_command = True
         
-        # Catch common crypto ticker patterns (3-5 letter commands that look like tickers)
+        # Check against dynamic crypto tickers (fetched from exchanges daily)
         if not is_crypto_command:
-            import re
-            # Match patterns like /btc, /eth, /sol but not /help, /ban, /mute
-            ticker_pattern = re.compile(r'^/[a-z]{2,5}$')
-            if ticker_pattern.match(command):
-                # Exclude known bot/admin commands
-                excluded = ['/rep', '/ban', '/cas', '/help', '/warn', '/mute', '/stats', '/fr']
-                if command not in excluded:
-                    # This might be a crypto ticker
+            # Get the ticker from command (remove leading /)
+            ticker = command[1:].lower() if command.startswith('/') else command.lower()
+            # Remove any bot mention suffix
+            if '@' in ticker:
+                ticker = ticker.split('@')[0]
+            
+            # Check against dynamic tickers from exchanges (600+ tokens)
+            dynamic_tickers = await get_crypto_tickers()
+            if ticker in dynamic_tickers:
+                is_crypto_command = True
+            else:
+                # Fallback: check against static config list
+                static_tickers = getattr(self.config, 'CRYPTO_TICKERS', [])
+                if ticker in static_tickers:
                     is_crypto_command = True
         
         if not is_crypto_command:

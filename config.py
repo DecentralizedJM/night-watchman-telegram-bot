@@ -266,7 +266,85 @@ class Config:
         # Trading commands
         '/price', '/chart', '/ta', '/signal', '/signals',
         '/alert', '/alerts', '/market', '/markets', '/trade', '/trading',
-        # Any command ending with 'usd' or containing coin tickers
+    ]
+    
+    # Comprehensive list of crypto ticker symbols (to prevent false spam detection)
+    # Auto-generated from exchange API - covers 450+ tokens available for trading
+    CRYPTO_TICKERS = [
+        # A-B
+        '0g', '1inch', '2z', 'a8', 'aave', 'ach', 'acs', 'ada', 'aero', 'aevo',
+        'afc', 'agi', 'agix', 'agld', 'aioz', 'aixbt', 'akt', 'akash', 'alch', 'algo',
+        'alt', 'ami', 'anime', 'ankr', 'ao', 'ape', 'apex', 'apt', 'ar', 'arb',
+        'arkm', 'art', 'arty', 'aster', 'ath', 'atom', 'audio', 'aurora', 'ava', 'avail',
+        'avax', 'avl', 'avnt', 'axl', 'axs', 'b3', 'baby1', 'bal', 'ban', 'bard',
+        'bat', 'bb', 'bbsol', 'bch', 'bdxn', 'beam', 'bel', 'bera', 'bico', 'bigtime',
+        'blast', 'blur', 'bmt', 'bnb', 'bnt', 'bob', 'boba', 'bomb', 'bome', 'bone',
+        'bonk', 'br', 'brett', 'bsv', 'btc', 'btg', 'btt',
+        # C-D
+        'c98', 'cake', 'camp', 'carv', 'cat', 'cate', 'cati', 'cbk', 'cc', 'celo',
+        'celr', 'cfg', 'cfx', 'cgpt', 'chsb', 'chz', 'city', 'ckb', 'cloud', 'cmeth',
+        'coinx', 'common', 'comp', 'cook', 'cookie', 'cope', 'coq', 'core', 'corn', 'cpool',
+        'cro', 'crv', 'cspr', 'cta', 'ctc', 'ctsi', 'cudis', 'cvx', 'cyber', 'dai',
+        'dash', 'dbr', 'dcr', 'deep', 'degen', 'dent', 'dfinity', 'dgb', 'diam', 'dmail',
+        'doge', 'dogs', 'dolo', 'dood', 'dot', 'dpx', 'drift', 'dusk', 'dydx', 'dym',
+        # E-F
+        'eat', 'egld', 'eigen', 'elx', 'ena', 'enj', 'ens', 'enso', 'eos', 'ept',
+        'era', 'es', 'ese', 'etc', 'eth', 'ethfi', 'ethw', 'ever', 'fet', 'ff',
+        'fhe', 'fida', 'fil', 'fitfi', 'flip', 'flock', 'floki', 'flow', 'flr', 'fluid',
+        'flux', 'fort', 'foxy', 'frag', 'frax', 'ftt', 'ftm', 'fuel', 'fxs',
+        # G-H
+        'gaib', 'gala', 'game', 'glm', 'glmr', 'gmt', 'gmx', 'goat', 'gods', 'gps',
+        'grail', 'grass', 'grt', 'gst', 'gt', 'gtai', 'gusd', 'haedal', 'hbar', 'hft',
+        'hive', 'hmstr', 'hnt', 'holo', 'home', 'hook', 'hpos', 'ht', 'htx', 'huma',
+        'hype', 'hyper',
+        # I-J-K
+        'icnt', 'icp', 'icx', 'id', 'ilv', 'imx', 'init', 'inj', 'insp', 'inter',
+        'io', 'iota', 'iotx', 'ip', 'izi', 'jasmy', 'jet', 'joe', 'jones', 'jst',
+        'jto', 'jup', 'juv', 'kaia', 'kas', 'kasta', 'kava', 'kcs', 'kda', 'kilo',
+        'kmno', 'knc', 'ksm', 'kub',
+        # L-M
+        'l3', 'la', 'ladys', 'lava', 'layer', 'lbtc', 'ldo', 'leo', 'linea', 'link',
+        'litkey', 'll', 'lmwr', 'lpt', 'lqty', 'lrc', 'ltc', 'luna', 'lunai', 'lunc',
+        'lusd', 'magic', 'major', 'mana', 'mango', 'manta', 'masa', 'mask', 'matic', 'mavia',
+        'mbox', 'mbx', 'mc', 'mcrt', 'me', 'mee', 'meme', 'memefi', 'merl', 'met',
+        'metax', 'metis', 'meth', 'mew', 'milk', 'mim', 'mina', 'mir', 'mkr', 'mmt',
+        'mngo', 'mnt', 'moca', 'mode', 'mog', 'mon', 'monpro', 'morpho', 'move', 'movr',
+        'mplx', 'mvl', 'mx', 'myro',
+        # N-O
+        'naka', 'navx', 'near', 'neiro', 'neo', 'neon', 'newt', 'nexo', 'nft', 'nibi',
+        'night', 'nkn', 'nmt', 'nom', 'not', 'nrn', 'ns', 'nym', 'oas', 'obol',
+        'obt', 'ocean', 'odos', 'ohm', 'okb', 'ol', 'olas', 'om', 'omg', 'ondo',
+        'one', 'ont', 'op', 'orca', 'order', 'ordi', 'oxt',
+        # P-Q
+        'paal', 'parti', 'pell', 'pendle', 'pengu', 'people', 'pepe', 'perp', 'pineye', 'pirate',
+        'pixel', 'plume', 'plutus', 'pnut', 'pol', 'poly', 'ponke', 'popcat', 'port', 'port3',
+        'portal', 'prcl', 'prime', 'prove', 'psg', 'psyop', 'pstake', 'puff', 'puffer', 'pump',
+        'purse', 'pyr', 'pyth', 'pyusd', 'qnt', 'qorpo', 'qtum',
+        # R-S
+        'raca', 'rad', 'rare', 'rats', 'ray', 'rdnt', 'recall', 'red', 'render', 'req',
+        'resolv', 'rlc', 'rlusd', 'rndr', 'roam', 'ron', 'ronin', 'root', 'rose', 'rpl',
+        'rsr', 'rss3', 'rune', 'rvn', 'saber', 'safe', 'sahara', 'samo', 'sand', 'saros',
+        'sats', 'sbr', 'sc', 'sca', 'scr', 'scroll', 'scrt', 'sd', 'sei', 'send',
+        'seraph', 'serum', 'sfp', 'sfund', 'shards', 'shib', 'sidus', 'sign', 'silo', 'sis',
+        'skate', 'skl', 'sky', 'slerf', 'slnd', 'slp', 'snx', 'sol', 'solo', 'solv',
+        'somi', 'sonic', 'soso', 'spec', 'spell', 'spk', 'spx', 'sqd', 'sqr', 'srm',
+        'ssv', 'stable', 'steem', 'step', 'steth', 'storj', 'stream', 'strk', 'stx', 'sui',
+        'sun', 'sundog', 'super', 'supra', 'sushi', 'svl', 'sweat', 'swell', 'sxt', 'synd',
+        'sys',
+        # T-U-V
+        'ta', 'tac', 'tai', 'taiko', 'tao', 'tel', 'tfuel', 'thena', 'theta', 'tia',
+        'time', 'tnsr', 'token', 'ton', 'toshi', 'towns', 'trc', 'tree', 'trump', 'trvl',
+        'trx', 'tulip', 'tuna', 'turbo', 'turbos', 'tusd', 'twt', 'ulti', 'uma', 'uni',
+        'usd1', 'usdc', 'usdd', 'usde', 'usdp', 'usdt', 'usdtb', 'usdy', 'ust', 'ustc',
+        'uxlink', 'vana', 'vanry', 'velo', 'venom', 'vet', 'vic', 'vinu', 'vra', 'vtho',
+        'vvv',
+        # W-X-Y-Z
+        'w', 'wal', 'waves', 'wax', 'waxp', 'wbtc', 'wct', 'weeth', 'wemix', 'wen',
+        'wet', 'weth', 'wif', 'wld', 'wlfi', 'woo', 'wojak', 'wrx', 'xai', 'xan',
+        'xaut', 'xava', 'xcad', 'xdc', 'xec', 'xem', 'xion', 'xlm', 'xmr', 'xo',
+        'xpl', 'xrp', 'xter', 'xtz', 'xusd', 'x2y2', 'yb', 'yfi', 'ygg', 'zbt',
+        'zec', 'zen', 'zent', 'zeta', 'zex', 'zig', 'zil', 'zk', 'zkc', 'zkj',
+        'zkl', 'zksync', 'zora', 'zrc', 'zro', 'zrx', 'ztx',
     ]
     
     # Funding rate commands - redirected to Futures Funding Alerts topic
