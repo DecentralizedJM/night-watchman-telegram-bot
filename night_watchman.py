@@ -1370,7 +1370,7 @@ I am a spam detection bot that protects Telegram groups from:
         
         # ===== CHECK FOR FUNDING COMMANDS FIRST =====
         funding_commands = getattr(self.config, 'FUNDING_COMMANDS', ['/funding', '/fundingrate', '/fr'])
-        funding_topic_id = getattr(self.config, 'FUNDING_ALERTS_TOPIC_ID', 9674)
+        funding_topic_id = getattr(self.config, 'FUNDING_ALERTS_TOPIC_ID', 96073)
         is_funding_command = False
         
         # Direct match for funding commands
@@ -1393,7 +1393,7 @@ I am a spam detection bot that protects Telegram groups from:
             
             await self._delete_message(chat_id, message_id)
             
-            topic_link = getattr(self.config, 'FUNDING_ALERTS_TOPIC_LINK', 'https://t.me/officialmudrex/9674')
+            topic_link = getattr(self.config, 'FUNDING_ALERTS_TOPIC_LINK', 'https://t.me/officialmudrex/96073')
             topic_name = getattr(self.config, 'FUNDING_ALERTS_TOPIC_NAME', 'Futures Funding Alerts')
             
             redirect_msg = getattr(self.config, 'FUNDING_COMMAND_REDIRECT_MESSAGE',

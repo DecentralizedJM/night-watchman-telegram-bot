@@ -387,9 +387,9 @@ class Config:
     MARKET_INTELLIGENCE_TOPIC_LINK = "https://t.me/officialmudrex/89270"
     
     # Topic ID for Futures Funding Alerts (where funding commands should go)
-    FUNDING_ALERTS_TOPIC_ID = 9674
+    FUNDING_ALERTS_TOPIC_ID = 96073
     FUNDING_ALERTS_TOPIC_NAME = "Futures Funding Alerts"
-    FUNDING_ALERTS_TOPIC_LINK = "https://t.me/officialmudrex/9674"
+    FUNDING_ALERTS_TOPIC_LINK = "https://t.me/officialmudrex/96073"
     
     # Message to show when redirecting crypto commands
     CRYPTO_COMMAND_REDIRECT_MESSAGE = """💡 <b>Wrong topic!</b>
