@@ -68,6 +68,23 @@ class Config:
         "scheme join karo", "yahan click karo", "link pe click",
         "limited offer", "jaldi grab karo", "sirf aaj",
         "aaja dm", "dm kar", "inbox kar", "message kar",
+        
+        # Recruitment/Job Scam Patterns (new)
+        "opening recruitment", "opening a recruitment",
+        "recruiting for a project", "recruitment for a project",
+        "remote project", "completely remote",
+        "actions according to", "tasks according to instructions",
+        "earnings from $", "income from $", "earn from $",
+        "per day", "per week",  # Only triggers when combined with earnings context
+        "putting together a team", "putting together a small team",
+        "join a project", "join my team",
+        "looking for partners", "looking for people", "looking for several",
+        "looking for responsible", "looking for 2-3 people", "looking for two people",
+        "full training and support", "we provide training",
+        "simple tasks", "clear instructions",
+        "daily payments", "everything is transparent",
+        "1-2 hours per day", "1.5-2 hours per day", "1–2 hours",
+        "send me a private message", "write to me at",
     ]
     
     # INSTANT BAN keywords (no warnings, immediate ban)
@@ -83,6 +100,13 @@ class Config:
         "play anywhere", "bet220", "promocasbot",
         # Scam patterns
         "dm me now", "inbox me", "message me now",
+        # Recruitment scam instant ban patterns
+        "write \"+\"", "leave a \"+\"", "send \"+\"",  # Classic recruitment scam CTA
+        "write + in private", "leave + here",
+        "earnings from $1", "income: starting at $",  # Specific dollar claims
+        "earn a steady extra $", "extra $500", "extra $1,000",
+        "$120 per day", "$190 per day", "$250 per day",
+        "$1050 per week", "$1,050 per week", "$1000 per week",
     ]
     
     # Whitelisted terms - NEVER trigger spam even if they contain keywords

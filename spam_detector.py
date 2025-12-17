@@ -412,8 +412,110 @@ class SpamDetector:
                 result['triggers'].append("emoji_promo_spam")
                 return result
         
+        # 7. RECRUITMENT SCAM DETECTION
+        # These scams promise remote work with unrealistic earnings + ask to DM
+        recruitment_result = self._check_recruitment_scam(message, message_lower, message_normalized)
+        if recruitment_result['instant_ban']:
+            return recruitment_result
+        
         return result
     
+    def _check_recruitment_scam(self, message: str, message_lower: str, message_normalized: str) -> Dict:
+        """
+        Detect recruitment/job scam patterns.
+        These scams promise remote work with unrealistic earnings and ask victims to DM.
+        
+        Pattern: earnings claim + remote work + DM request + telegram handle
+        """
+        result = {'instant_ban': False, 'reasons': [], 'triggers': []}
+        
+        # Check for @ mentions (DM targets)
+        has_telegram_handle = bool(re.search(r'@[a-zA-Z][a-zA-Z0-9_]{4,}', message))
+        
+        # Earnings patterns with dollar amounts
+        earnings_patterns = [
+            r'\$\d{2,4}\s*(per|a)\s*(day|week)',  # $120 per day, $1050 per week
+            r'\$\d{2,4}\s*-\s*\$\d{2,4}',  # $120-$250
+            r'(earnings?|income|earn)\s*(from|starting|of|up to)?\s*\$\d+',  # earnings from $120
+            r'\$\d+\+?\s*(per|a|/)\s*(day|week)',  # $1,000+ per week
+            r'(up to|starting at)\s*\$\d+',  # up to $1050
+        ]
+        has_earnings_claim = any(re.search(p, message_lower) for p in earnings_patterns)
+        
+        # Remote work keywords
+        remote_keywords = [
+            'remote', 'remotely', 'from home', 'from a phone', 'from phone',
+            'from a computer', 'from computer', 'work online', 'online work',
+            'completely remote', 'fully remote'
+        ]
+        has_remote_keyword = any(kw in message_lower for kw in remote_keywords)
+        
+        # Recruitment language
+        recruitment_keywords = [
+            'looking for', 'recruiting', 'recruitment', 'opening recruitment',
+            'join a project', 'join my team', 'putting together', 'team',
+            'looking for people', 'looking for partners', 'looking for several',
+            '2-3 people', 'two people', 'several people', 'responsible people'
+        ]
+        has_recruitment = any(kw in message_lower for kw in recruitment_keywords)
+        
+        # DM request patterns
+        dm_patterns = [
+            'write to', 'message me', 'dm me', 'private message',
+            'send me a', 'contact me', 'write "+"', "write '+'", 'leave a "+"',
+            'write +', 'leave +', 'interested, message', 'if interested',
+            'details:', 'details -', 'want to join'
+        ]
+        has_dm_request = any(kw in message_lower for kw in dm_patterns)
+        
+        # Easy work promises
+        easy_work_patterns = [
+            'simple tasks', 'clear instructions', 'easy', '1-2 hours',
+            '1.5-2 hours', 'hours per day', 'full training', 'training and support',
+            'we provide', 'daily payments', 'transparent'
+        ]
+        has_easy_promise = any(kw in message_lower for kw in easy_work_patterns)
+        
+        # Attention grabbers (suspicious)
+        attention_patterns = [
+            'attention', '‼️', '❗', '⚡', '❗️'
+        ]
+        has_attention = any(kw in message for kw in attention_patterns)
+        
+        # SCORING: Need combination of signals to trigger
+        score = 0
+        triggers = []
+        
+        if has_telegram_handle:
+            score += 1
+            triggers.append("telegram_handle")
+        if has_earnings_claim:
+            score += 2  # Strong signal
+            triggers.append("earnings_claim")
+        if has_remote_keyword:
+            score += 1
+            triggers.append("remote_work")
+        if has_recruitment:
+            score += 1
+            triggers.append("recruitment_language")
+        if has_dm_request:
+            score += 2  # Strong signal
+            triggers.append("dm_request")
+        if has_easy_promise:
+            score += 1
+            triggers.append("easy_money_promise")
+        if has_attention:
+            score += 0.5
+            triggers.append("attention_grabber")
+        
+        # Instant ban if score >= 4 (e.g., earnings + DM request + any other signal)
+        if score >= 4:
+            result['instant_ban'] = True
+            result['reasons'].append(f"Recruitment scam detected (score: {score})")
+            result['triggers'] = triggers
+        
+        return result
+
     def _check_money_emojis(self, message: str, user_id: int, 
                             user_join_date: Optional[datetime], 
                             user_rep: int, is_first_message: bool) -> Dict:
