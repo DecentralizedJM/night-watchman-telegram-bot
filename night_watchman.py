@@ -706,6 +706,18 @@ class NightWatchman:
                             )
                             return
             
+            # Skip spam detection for simple crypto ticker commands (they're already handled by redirect)
+            # This prevents false positives on commands like /eth, /btc, etc.
+            if text.startswith('/') and len(text.split()) == 1:
+                command_lower = text.split()[0].lower()
+                ticker = command_lower[1:].split('@')[0] if command_lower.startswith('/') else command_lower
+                # Check against known crypto tickers
+                static_tickers = getattr(self.config, 'CRYPTO_TICKERS', [])
+                crypto_commands = getattr(self.config, 'CRYPTO_COMMANDS', [])
+                if ticker in static_tickers or f"/{ticker}" in [c.lower() for c in crypto_commands]:
+                    logger.info(f"⏭️ Skipping spam detection for crypto command: {text}")
+                    return  # Don't spam-check crypto commands
+            
             # Get user join date for new user detection
             member_key = f"{chat_id}_{user_id}"
             join_date = self.member_join_dates.get(member_key)
