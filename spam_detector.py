@@ -471,13 +471,16 @@ class SpamDetector:
         # Check for @ mentions (DM targets)
         has_telegram_handle = bool(re.search(r'@[a-zA-Z][a-zA-Z0-9_]{4,}', message))
         
-        # Earnings patterns with dollar amounts
+        # Earnings patterns with dollar amounts (including spelled out "dollars")
         earnings_patterns = [
             r'\$\d{2,4}\s*(per|a)\s*(day|week)',  # $120 per day, $1050 per week
             r'\$\d{2,4}\s*-\s*\$\d{2,4}',  # $120-$250
             r'(earnings?|income|earn)\s*(from|starting|of|up to)?\s*\$\d+',  # earnings from $120
             r'\$\d+\+?\s*(per|a|/)\s*(day|week)',  # $1,000+ per week
             r'(up to|starting at)\s*\$\d+',  # up to $1050
+            r'\d{2,4}\s*(dollars?|usd)\s*(per|a)\s*(day|week)',  # 70-80 dollars per day
+            r'\d{2,4}\s*-\s*\d{2,4}\s*(dollars?|usd)',  # 70-80 dollars
+            r'\$\d+\s*[–-]\s*\$\d+',  # $500–$1,000 (en-dash or hyphen)
         ]
         has_earnings_claim = any(re.search(p, message_lower) for p in earnings_patterns)
         
@@ -485,7 +488,9 @@ class SpamDetector:
         remote_keywords = [
             'remote', 'remotely', 'from home', 'from a phone', 'from phone',
             'from a computer', 'from computer', 'work online', 'online work',
-            'completely remote', 'fully remote'
+            'completely remote', 'fully remote', 'remote employment', 
+            'remote job', 'online project', 'via phone', 'via pc',
+            'only via phone', 'phone or pc'
         ]
         has_remote_keyword = any(kw in message_lower for kw in remote_keywords)
         
@@ -494,7 +499,10 @@ class SpamDetector:
             'looking for', 'recruiting', 'recruitment', 'opening recruitment',
             'join a project', 'join my team', 'putting together', 'team',
             'looking for people', 'looking for partners', 'looking for several',
-            '2-3 people', 'two people', 'several people', 'responsible people'
+            '2-3 people', 'two people', 'several people', 'responsible people',
+            '2-3 individuals', 'seeking', 'urgently seeking', 'new online project',
+            'cool project', 'join my team at', 'activities on bybit',
+            'activities on binance', 'we\'re recruiting'
         ]
         has_recruitment = any(kw in message_lower for kw in recruitment_keywords)
         
@@ -503,7 +511,9 @@ class SpamDetector:
             'write to', 'message me', 'dm me', 'private message',
             'send me a', 'contact me', 'write "+"', "write '+'", 'leave a "+"',
             'write +', 'leave +', 'interested, message', 'if interested',
-            'details:', 'details -', 'want to join'
+            'details:', 'details -', 'want to join', 'details in pm',
+            'details in dm', 'write now', 'write to me at', 'send me a private',
+            'pm -', 'dm -', 'pm:', 'write me'
         ]
         has_dm_request = any(kw in message_lower for kw in dm_patterns)
         
@@ -517,16 +527,20 @@ class SpamDetector:
         
         # Attention grabbers (suspicious)
         attention_patterns = [
-            'attention', '‼️', '❗', '⚡', '❗️'
+            'attention', '‼️', '❗', '⚡', '❗️', '✔', '✅'
         ]
         has_attention = any(kw in message for kw in attention_patterns)
+        
+        # Check for "legal" claims (often used by scammers to add legitimacy)
+        legal_keywords = ['legal', 'secure', 'legitimate', 'legit', 'safe', 'trusted']
+        has_legal_claim = any(kw in message_lower for kw in legal_keywords)
         
         # SCORING: Need combination of signals to trigger
         score = 0
         triggers = []
         
         if has_telegram_handle:
-            score += 1
+            score += 1.5  # Increased - key scam indicator
             triggers.append("telegram_handle")
         if has_earnings_claim:
             score += 2  # Strong signal
@@ -535,7 +549,7 @@ class SpamDetector:
             score += 1
             triggers.append("remote_work")
         if has_recruitment:
-            score += 1
+            score += 1.5  # Increased
             triggers.append("recruitment_language")
         if has_dm_request:
             score += 2  # Strong signal
@@ -544,11 +558,19 @@ class SpamDetector:
             score += 1
             triggers.append("easy_money_promise")
         if has_attention:
-            score += 0.5
+            score += 1  # Increased from 0.5
             triggers.append("attention_grabber")
+        if has_legal_claim:
+            score += 0.5  # "Legal" claims are suspicious in this context
+            triggers.append("legal_claim")
         
-        # Instant ban if score >= 4 (e.g., earnings + DM request + any other signal)
-        if score >= 4:
+        # Bonus: telegram handle + attention emojis + recruitment = very suspicious
+        if has_telegram_handle and has_attention and has_recruitment:
+            score += 1
+            triggers.append("combo_bonus")
+        
+        # Instant ban if score >= 3.5 (lowered from 4 to catch more scams)
+        if score >= 3.5:
             result['instant_ban'] = True
             result['reasons'].append(f"Recruitment scam detected (score: {score})")
             result['triggers'] = triggers
