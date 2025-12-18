@@ -1338,6 +1338,12 @@ I am a spam detection bot that protects Telegram groups from:
             hours = int(uptime.total_seconds() // 3600)
             minutes = int((uptime.total_seconds() % 3600) // 60)
             
+            # Get ML stats
+            ml_stats = self.detector.get_ml_stats()
+            ml_info = ""
+            if ml_stats.get('ml_available'):
+                ml_info = f"\n\n🤖 <b>ML Classifier:</b> {'Active' if ml_stats.get('is_trained') else 'Training...'}\n📚 Training samples: {ml_stats.get('spam_samples', 0)} spam, {ml_stats.get('ham_samples', 0)} ham"
+            
             stats_msg = f"""📊 <b>Night Watchman Stats</b>
 
 ⏱️ Uptime: {hours}h {minutes}m
@@ -1345,7 +1351,7 @@ I am a spam detection bot that protects Telegram groups from:
 🚨 Spam detected: {self.stats['spam_detected']}
 🗑️ Messages deleted: {self.stats['messages_deleted']}
 ⚠️ Users warned: {self.stats['users_warned']}
-🔇 Users muted: {self.stats['users_muted']}"""
+🔇 Users muted: {self.stats['users_muted']}{ml_info}"""
             await self._send_message(chat_id, stats_msg, auto_delete=False)
         
         elif text.startswith('/analytics'):
@@ -2237,6 +2243,10 @@ No CAS ban record found."""
         banned = await self._ban_user(chat_id, user_id)
         if banned:
             self.stats['users_banned'] += 1
+            
+            # Learn from this spam for ML classifier
+            if text and len(text) > 10:
+                self.detector.learn_spam(text)
             
             # Cool ban message
             ban_msg = self._get_ban_message(user_name, username, ban_category)

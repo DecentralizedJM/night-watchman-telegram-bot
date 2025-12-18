@@ -10,6 +10,13 @@ from typing import Dict, List, Tuple, Optional
 from datetime import datetime, timezone, timedelta
 from config import Config
 
+# Import ML classifier (optional - gracefully degrades if not available)
+try:
+    from ml_classifier import get_classifier, SpamClassifier
+    ML_ENABLED = True
+except ImportError:
+    ML_ENABLED = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -52,6 +59,16 @@ class SpamDetector:
     
     def __init__(self):
         self.config = Config()
+        
+        # Initialize ML classifier
+        self.ml_classifier = None
+        if ML_ENABLED:
+            try:
+                data_dir = getattr(self.config, 'ANALYTICS_DATA_DIR', 'data')
+                self.ml_classifier = get_classifier(data_dir)
+                logger.info("🤖 ML spam classifier initialized")
+            except Exception as e:
+                logger.error(f"Failed to initialize ML classifier: {e}")
         
         # Track user message history for rate limiting
         self.user_messages: Dict[int, List[datetime]] = {}
@@ -281,6 +298,20 @@ class SpamDetector:
             result['spam_score'] += mention_score
             result['reasons'].append(f"Mention spam detected ({mention_count} mentions)")
             result['details']['mentions'] = mention_count
+        
+        # 11. ML-based spam detection (adaptive learning)
+        if self.ml_classifier and self.ml_classifier.is_trained:
+            ml_is_spam, ml_confidence = self.ml_classifier.predict(message)
+            if ml_is_spam and ml_confidence >= 0.75:
+                # High confidence ML detection
+                result['spam_score'] += 0.4
+                result['reasons'].append(f"ML classifier: {ml_confidence:.0%} spam confidence")
+                result['details']['ml_confidence'] = ml_confidence
+            elif ml_is_spam and ml_confidence >= 0.6:
+                # Medium confidence - add smaller score
+                result['spam_score'] += 0.2
+                result['reasons'].append(f"ML classifier: {ml_confidence:.0%} spam confidence")
+                result['details']['ml_confidence'] = ml_confidence
         
         # Determine if spam based on score
         if result['spam_score'] >= 0.7:
@@ -928,3 +959,25 @@ class SpamDetector:
         """Clear forward violations for a user."""
         if user_id in self.forward_violators:
             del self.forward_violators[user_id]
+    
+    def learn_spam(self, message: str):
+        """
+        Add a message to the ML spam training set.
+        Called when an admin bans a user for spam.
+        """
+        if self.ml_classifier:
+            self.ml_classifier.add_spam_sample(message)
+    
+    def learn_ham(self, message: str):
+        """
+        Add a message to the ML ham (non-spam) training set.
+        Called when a message is falsely flagged.
+        """
+        if self.ml_classifier:
+            self.ml_classifier.add_ham_sample(message)
+    
+    def get_ml_stats(self) -> Dict:
+        """Get ML classifier statistics."""
+        if self.ml_classifier:
+            return self.ml_classifier.get_stats()
+        return {"ml_available": False, "is_trained": False}
