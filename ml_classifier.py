@@ -1,6 +1,6 @@
 """
 Night Watchman - ML-based Spam Classifier
-Uses Naive Bayes for adaptive spam detection
+Uses Ensemble Voting (Naive Bayes + Logistic Regression + Random Forest) for adaptive spam detection
 """
 
 import os
@@ -16,7 +16,8 @@ logger = logging.getLogger(__name__)
 try:
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.naive_bayes import MultinomialNB
-    from sklearn.pipeline import Pipeline
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.ensemble import RandomForestClassifier, VotingClassifier
     import pickle
     ML_AVAILABLE = True
 except ImportError:
@@ -26,15 +27,18 @@ except ImportError:
 
 class SpamClassifier:
     """
-    Machine Learning based spam classifier using Naive Bayes.
+    Machine Learning based spam classifier using Ensemble Voting.
+    Combines Naive Bayes, Logistic Regression, and Random Forest for robust detection.
     Learns from training data and admin actions.
     """
     
     def __init__(self, data_dir: str = "data"):
         self.data_dir = data_dir
-        self.model_path = os.path.join(data_dir, "spam_model.pkl")
+        self.model_path = os.path.join(data_dir, "spam_model_v2.pkl")
+        self.vectorizer_path = os.path.join(data_dir, "spam_vectorizer.pkl")
         self.dataset_path = os.path.join(data_dir, "spam_dataset.json")
         
+        self.vectorizer = None
         self.model = None
         self.is_trained = False
         self.min_training_samples = 20  # Minimum samples needed to train
@@ -181,13 +185,15 @@ class SpamClassifier:
         if not ML_AVAILABLE:
             return
         
-        # Try to load existing model
-        if os.path.exists(self.model_path):
+        # Try to load existing model and vectorizer
+        if os.path.exists(self.model_path) and os.path.exists(self.vectorizer_path):
             try:
+                with open(self.vectorizer_path, 'rb') as f:
+                    self.vectorizer = pickle.load(f)
                 with open(self.model_path, 'rb') as f:
                     self.model = pickle.load(f)
                 self.is_trained = True
-                logger.info("📚 ML model loaded from file")
+                logger.info("📚 ML ensemble model loaded from file")
                 return
             except Exception as e:
                 logger.error(f"Error loading model: {e}")
@@ -196,7 +202,7 @@ class SpamClassifier:
         self._train_model()
     
     def _train_model(self):
-        """Train the spam classifier."""
+        """Train the ensemble spam classifier."""
         if not ML_AVAILABLE:
             return
         
@@ -221,46 +227,66 @@ class SpamClassifier:
             texts.append(self._preprocess_text(text))
             labels.append(0)  # 0 = ham (not spam)
         
-        # Create and train pipeline
-        self.model = Pipeline([
-            ('tfidf', TfidfVectorizer(
-                max_features=1000,
+        try:
+            # Create TF-IDF vectorizer
+            self.vectorizer = TfidfVectorizer(
+                max_features=1500,
                 ngram_range=(1, 2),  # Use unigrams and bigrams
                 min_df=1,
                 stop_words='english'
-            )),
-            ('clf', MultinomialNB(alpha=0.1))
-        ])
-        
-        try:
-            self.model.fit(texts, labels)
+            )
+            
+            # Transform texts to features
+            X = self.vectorizer.fit_transform(texts)
+            
+            # Create ensemble with 3 classifiers
+            nb_clf = MultinomialNB(alpha=0.1)
+            lr_clf = LogisticRegression(max_iter=1000, random_state=42)
+            rf_clf = RandomForestClassifier(n_estimators=50, max_depth=10, random_state=42)
+            
+            # Voting classifier - soft voting uses predicted probabilities
+            self.model = VotingClassifier(
+                estimators=[
+                    ('naive_bayes', nb_clf),
+                    ('logistic_regression', lr_clf),
+                    ('random_forest', rf_clf)
+                ],
+                voting='soft'  # Use probability-based voting
+            )
+            
+            self.model.fit(X, labels)
             self.is_trained = True
             
-            # Save model
+            # Save model and vectorizer
+            with open(self.vectorizer_path, 'wb') as f:
+                pickle.dump(self.vectorizer, f)
             with open(self.model_path, 'wb') as f:
                 pickle.dump(self.model, f)
             
-            logger.info(f"🤖 ML model trained on {len(spam_samples)} spam + {len(ham_samples)} ham samples")
+            logger.info(f"🤖 ML ensemble model trained: {len(spam_samples)} spam + {len(ham_samples)} ham samples (3 classifiers)")
         except Exception as e:
             logger.error(f"Error training model: {e}")
             self.is_trained = False
     
     def predict(self, text: str) -> Tuple[bool, float]:
         """
-        Predict if a message is spam.
+        Predict if a message is spam using ensemble voting.
         
         Returns:
             Tuple of (is_spam: bool, confidence: float)
         """
-        if not ML_AVAILABLE or not self.is_trained or not self.model:
+        if not ML_AVAILABLE or not self.is_trained or not self.model or not self.vectorizer:
             return False, 0.0
         
         try:
             processed = self._preprocess_text(text)
             
-            # Get prediction and probability
-            prediction = self.model.predict([processed])[0]
-            probabilities = self.model.predict_proba([processed])[0]
+            # Transform text using vectorizer
+            X = self.vectorizer.transform([processed])
+            
+            # Get prediction and probability from ensemble
+            prediction = self.model.predict(X)[0]
+            probabilities = self.model.predict_proba(X)[0]
             
             is_spam = prediction == 1
             confidence = probabilities[1] if is_spam else probabilities[0]
@@ -295,6 +321,7 @@ class SpamClassifier:
         return {
             "ml_available": ML_AVAILABLE,
             "is_trained": self.is_trained,
+            "model_type": "Ensemble (NB + LR + RF)" if self.is_trained else "Not trained",
             "spam_samples": len(self.dataset.get("spam", [])),
             "ham_samples": len(self.dataset.get("ham", [])),
             "last_updated": self.dataset.get("last_updated", "never")

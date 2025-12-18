@@ -1342,7 +1342,9 @@ I am a spam detection bot that protects Telegram groups from:
             ml_stats = self.detector.get_ml_stats()
             ml_info = ""
             if ml_stats.get('ml_available'):
-                ml_info = f"\n\n🤖 <b>ML Classifier:</b> {'Active' if ml_stats.get('is_trained') else 'Training...'}\n📚 Training samples: {ml_stats.get('spam_samples', 0)} spam, {ml_stats.get('ham_samples', 0)} ham"
+                model_type = ml_stats.get('model_type', 'Unknown')
+                status = 'Active' if ml_stats.get('is_trained') else 'Training...'
+                ml_info = f"\n\n🤖 <b>ML Classifier:</b> {status}\n🧠 Model: {model_type}\n📚 Training: {ml_stats.get('spam_samples', 0)} spam, {ml_stats.get('ham_samples', 0)} ham"
             
             stats_msg = f"""📊 <b>Night Watchman Stats</b>
 
