@@ -14,6 +14,40 @@ logger = logging.getLogger(__name__)
 
 
 class SpamDetector:
+    def _check_flexible_scam_patterns(self, message: str, message_lower: str) -> Dict:
+        """
+        Detect scam patterns using regex and partial phrase matching for broader coverage.
+        """
+        result = {'instant_ban': False, 'reasons': [], 'triggers': []}
+        scam_regexes = [
+            r"thanks to [^,\n]+,? my (trading )?account is (thriving|growing|doing great)",
+            r"profit (with|thanks to) (mrs|mr|@)[^\s]+",
+            r"withdrawals? (are|is) (easy|straightforward|simple|without hassle)",
+            r"from [^\n]+ to \$?\d{2,5} (profit|returns|income)",
+            r"automated trading system (based on|using) (market conditions|algorithms)",
+            r"avoids? risky strategies? (like|such as) (martingale|grid|hedging)",
+            r"aims? for a daily (performance|return|roi|profit) of ?\d+%?",
+            r"(ea|system) operates? on the m\d+ timeframe",
+            r"compatible with all brokers",
+            r"manages? (sl/tp|stop loss|take profit)",
+            r"works 24/5 on mt4( and mt5)?",
+            r"funded account challenges?",
+            r"send me a dm (for|to see|for more) (proof|results|details)",
+            r"financial assistance (without|with no) hassle",
+            r"my life changed after",
+            r"i bought (my|a|the) [^\n]+ for my (son|daughter|family|wife|husband)",
+            r"(contact|dm|message) @[a-zA-Z0-9_]{4,} (for|to get|for help|for more)",
+            r"\$\d{2,5} (profit|returns|income|gain|withdrawal)",
+            r"\d+% (daily|weekly|monthly) (returns?|profit|roi)",
+            r"roi of \d+%",
+        ]
+        for pattern in scam_regexes:
+            if re.search(pattern, message_lower):
+                result['instant_ban'] = True
+                result['reasons'].append(f"Regex scam pattern: {pattern}")
+                result['triggers'].append("regex_scam")
+                return result
+        return result
     """Detects spam messages using multiple techniques"""
     
     def __init__(self):
@@ -417,6 +451,11 @@ class SpamDetector:
         recruitment_result = self._check_recruitment_scam(message, message_lower, message_normalized)
         if recruitment_result['instant_ban']:
             return recruitment_result
+
+        # 8. FLEXIBLE SCAM PATTERN DETECTION (regex/partial phrase)
+        flexible_scam_result = self._check_flexible_scam_patterns(message, message_lower)
+        if flexible_scam_result['instant_ban']:
+            return flexible_scam_result
         
         return result
     

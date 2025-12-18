@@ -26,6 +26,22 @@ class Config:
         # Suspicious phrases (English)
         "send me", "invest with me", "trading signals",
         "binary options", "forex signals",
+
+        # New scam patterns (Dec 2025)
+        "trading account is thriving",
+        "provided financial assistance",
+        "withdrawals are straightforward",
+        "from food stamps to $",
+        "profit Mrs @",
+        "automated trading system based on market conditions",
+        "avoids risky strategies like martingale",
+        "aims for a daily performance of",
+        "ea operates on the m5 timeframe",
+        "compatible with all brokers",
+        "manages sl/tp",
+        "works 24/5 on mt4 and mt5",
+        "funded account challenges",
+        "send me a dm for more proof",
         
         # AGGRESSIVE DM/CONTACT PATTERNS (INSTANT BAN)
         "dm me now", "dm me", "message me now", "message me",
@@ -107,6 +123,22 @@ class Config:
         "earn a steady extra $", "extra $500", "extra $1,000",
         "$120 per day", "$190 per day", "$250 per day",
         "$1050 per week", "$1,050 per week", "$1000 per week",
+
+        # New scam patterns (Dec 2025)
+        "trading account is thriving",
+        "provided financial assistance",
+        "withdrawals are straightforward",
+        "from food stamps to $",
+        "profit Mrs @",
+        "automated trading system based on market conditions",
+        "avoids risky strategies like martingale",
+        "aims for a daily performance of",
+        "ea operates on the m5 timeframe",
+        "compatible with all brokers",
+        "manages sl/tp",
+        "works 24/5 on mt4 and mt5",
+        "funded account challenges",
+        "send me a dm for more proof",
     ]
     
     # Whitelisted terms - NEVER trigger spam even if they contain keywords
