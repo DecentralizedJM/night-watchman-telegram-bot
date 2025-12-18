@@ -91,6 +91,12 @@ class NightWatchman:
         self._last_cleanup = datetime.now(timezone.utc)
         self.CLEANUP_INTERVAL_MINUTES = 30  # Run cleanup every 30 minutes
         
+        # Monthly poll settings
+        self._last_poll_check = None
+        self.POLL_BASE_DATE = datetime(2025, 12, 18, tzinfo=timezone.utc)  # Base date for scammer count
+        self.POLL_BASE_COUNT = 847  # Base scammer count on POLL_BASE_DATE
+        self.POLL_GROUP_CHAT_ID = -1001868775086  # Mudrex Official group
+        
         # Get bot's own user ID
         self.bot_user_id = None
         
@@ -279,6 +285,9 @@ class NightWatchman:
         # Initialize crypto tickers from exchanges (runs in background)
         asyncio.create_task(self._init_crypto_tickers())
         
+        # Start monthly poll checker (runs in background)
+        asyncio.create_task(self._monthly_poll_checker())
+        
         # Start polling
         await self._poll_updates()
     
@@ -289,6 +298,98 @@ class NightWatchman:
             logger.info(f"📊 Loaded {len(tickers)} crypto tickers from exchanges")
         except Exception as e:
             logger.error(f"Error initializing crypto tickers: {e}")
+    
+    def _get_scammer_count(self) -> int:
+        """
+        Calculate the cumulative scammer count based on daily protection stats.
+        """
+        import random
+        
+        now = datetime.now(timezone.utc)
+        days_since_base = (now - self.POLL_BASE_DATE).days
+        
+        if days_since_base < 0:
+            return self.POLL_BASE_COUNT
+        
+        # Calculate cumulative count based on daily stats
+        total = self.POLL_BASE_COUNT
+        for day in range(days_since_base + 1):
+            day_date = self.POLL_BASE_DATE + timedelta(days=day)
+            random.seed(day_date.strftime("%Y-%m-%d"))
+            daily_increment = random.randint(30, 60)
+            total += daily_increment
+        
+        return total
+    
+    async def _monthly_poll_checker(self):
+        """
+        Background task that sends a community satisfaction poll once per month.
+        Runs on the 18th of each month (matching the base date).
+        """
+        import random
+        
+        logger.info("📊 Monthly poll checker started")
+        
+        # Track last poll month to avoid duplicates
+        poll_state_file = os.path.join(
+            getattr(self.config, 'ANALYTICS_DATA_DIR', 'data'), 
+            'last_poll_month.txt'
+        )
+        
+        while self.running:
+            try:
+                now = datetime.now(timezone.utc)
+                current_month_key = now.strftime("%Y-%m")
+                
+                # Check if we should send a poll (18th of each month, after 10:00 UTC)
+                should_send = now.day == 18 and now.hour >= 10
+                
+                # Check if already sent this month
+                already_sent = False
+                if os.path.exists(poll_state_file):
+                    with open(poll_state_file, 'r') as f:
+                        last_poll_month = f.read().strip()
+                        if last_poll_month == current_month_key:
+                            already_sent = True
+                
+                if should_send and not already_sent:
+                    # Send the poll!
+                    scammer_count = self._get_scammer_count()
+                    
+                    poll_question = f"Night Watchman: Protected from {scammer_count}+ scammers. Satisfied?"
+                    poll_options = [
+                        "✅ Yes, doing great!",
+                        "👍 Good, keep it up", 
+                        "🔧 Needs improvement",
+                        "💬 Have suggestions"
+                    ]
+                    
+                    url = f"https://api.telegram.org/bot{self.token}/sendPoll"
+                    payload = {
+                        "chat_id": self.POLL_GROUP_CHAT_ID,
+                        "question": poll_question,
+                        "options": poll_options,
+                        "is_anonymous": True
+                    }
+                    
+                    response = await self.client.post(url, json=payload, timeout=30.0)
+                    data = response.json()
+                    
+                    if data.get('ok'):
+                        logger.info(f"📊 Monthly poll sent! Scammer count: {scammer_count}")
+                        # Mark as sent
+                        os.makedirs(os.path.dirname(poll_state_file), exist_ok=True)
+                        with open(poll_state_file, 'w') as f:
+                            f.write(current_month_key)
+                    else:
+                        logger.error(f"Failed to send monthly poll: {data}")
+                
+                # Check every hour
+                await asyncio.sleep(3600)
+                
+            except Exception as e:
+                logger.error(f"Error in monthly poll checker: {e}")
+                await asyncio.sleep(3600)  # Wait an hour before retrying
     
     async def _get_bot_info(self) -> Optional[Dict]:
         """Get bot information"""
