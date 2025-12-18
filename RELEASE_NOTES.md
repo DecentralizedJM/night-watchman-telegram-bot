@@ -1,5 +1,45 @@
 # Release Notes
 
+## v1.2.0 (December 18, 2025) - 🤖 ML Superbot Upgrade
+
+### 🧠 Ensemble Machine Learning
+Night Watchman is now an **AI-powered superbot** with ensemble ML spam detection:
+
+| Classifier | Purpose |
+|------------|---------|
+| **Naive Bayes** | Fast probabilistic baseline for text classification |
+| **Logistic Regression** | Linear decision boundaries for clear spam patterns |
+| **Random Forest** | Non-linear pattern capture for complex scam variants |
+
+**How it works:**
+- All 3 classifiers vote on each message using **soft voting**
+- Final prediction = probability-averaged consensus
+- More robust than any single model alone
+
+### 📚 Self-Learning System
+- Admin bans automatically add messages to spam training data
+- Model retrains every 10 new samples
+- Bot gets smarter the more you use it!
+
+### 🎣 New Scam Detection Patterns
+- **Forex/Trading Scams:** Flexible regex for "@tradername", "profit", "DM me"
+- **Recruitment Scams:** Weighted scoring (telegram handles +1.5, earnings +2, DM requests +2)
+- Lowered detection threshold from 4.0 to 3.5 for better catch rate
+
+### 📊 Monthly Community Polls
+- Automated satisfaction polls on the 1st of each month
+- Shows running count of scammers caught
+- Engages community with moderation transparency
+
+### 📈 Enhanced /stats Command
+```
+🤖 ML Classifier: Active
+🧠 Model: Ensemble (NB + LR + RF)
+📚 Training: 45 spam, 30 ham
+```
+
+---
+
 ## v1.1.3 (December 10, 2025) - 🔗 Hyperlink + Emoji Detection
 
 ### New Rule

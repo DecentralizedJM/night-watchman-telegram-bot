@@ -1,15 +1,16 @@
-# Night Watchman 🌙
+# Night Watchman 🌙🤖
 
-24/7 Telegram watchdog & moderation bot. Protects your groups from spam, scams, bad language, and more.
+**AI-Powered Telegram Superbot** — 24/7 intelligent watchdog with machine learning spam detection. Protects your groups from spam, scams, recruitment fraud, and more using ensemble ML classifiers.
 
-**Latest Release:** v1.1.4 (December 11, 2025) - 🐛 Bug Fixes & Memory Management
-- **FIXED:** `/rep` command in DM no longer falsely claims everyone is an admin
-- **FIXED:** Memory leaks - added periodic cleanup for in-memory caches
-- **IMPROVED:** Test suite restructured into `tests/` directory
-- Automatic cache cleanup every 30 minutes (message_authors, enhanced_messages, etc.)
-- Prevents unbounded memory growth on long-running instances
+**Latest Release:** v1.2.0 (December 18, 2025) - 🤖 ML Superbot Upgrade
+- **NEW:** Ensemble Machine Learning classifier (3 AI models working together)
+- **NEW:** Naive Bayes + Logistic Regression + Random Forest voting
+- **NEW:** Self-learning from admin actions - gets smarter over time
+- **NEW:** Monthly community satisfaction polls with scammer tracking
+- **IMPROVED:** Forex/trading scam detection with flexible pattern matching
+- **IMPROVED:** Recruitment scam detection with weighted scoring system
 
-**Previous Release:** v1.1.3 (December 10, 2025) - 🔗 Hyperlink + Emoji Detection
+**Previous Release:** v1.1.4 (December 11, 2025) - � Bug Fixes & Memory Management
 - **NEW RULE:** Messages with hyperlinked text (text_link) + more than 2 emojis = instant ban
 - Catches disguised spam links hidden behind pretty emoji-laden text
 - Improved emoji detection pattern for better coverage
@@ -28,6 +29,14 @@
 - Cool sassy ban message templates
 
 ## Features
+
+### 🤖 AI/ML Spam Detection (NEW!)
+- **Ensemble Machine Learning** - 3 classifiers vote on each message
+- **Naive Bayes** - Fast probabilistic text classification
+- **Logistic Regression** - Linear pattern detection
+- **Random Forest** - Non-linear scam variant capture
+- **Self-learning** - Improves from admin bans automatically
+- **TF-IDF vectorization** - Understands word importance and n-grams
 
 ### 🛡️ Core Protection
 - **Real-time spam detection** using multiple signals
@@ -68,16 +77,42 @@
 - `/rep` - Check your reputation
 - `/leaderboard` - Top 10 users by reputation
 
-## 🚀 Recent Updates (v1.1.4)
+## 🚀 Recent Updates (v1.2.0)
 
-### � Bug Fixes
-- **`/rep` in DM fixed** - No longer shows "You're an admin!" to everyone
-- In DM context, `/rep` now correctly shows your actual reputation
+### 🤖 ML Superbot Upgrade
+Night Watchman now uses **Ensemble Machine Learning** for spam detection:
 
-### 🧹 Memory Management
-- Added `_cleanup_caches()` method for periodic memory cleanup
-- Runs automatically every 30 minutes during normal operation
-- Prevents unbounded growth of in-memory dictionaries:
+**3-Classifier Voting System:**
+| Classifier | Strength |
+|------------|----------|
+| **Naive Bayes** | Fast probabilistic baseline, excellent for text |
+| **Logistic Regression** | Clear linear decision boundaries |
+| **Random Forest** | Catches complex non-linear patterns |
+
+- Uses **soft voting** - averages probability scores from all 3 models
+- More robust than any single classifier alone
+- Reduced false positives on legitimate messages
+- Better detection of new scam variants
+
+**Self-Learning:**
+- When admins ban spammers, the message is added to training data
+- Model retrains automatically every 10 new samples
+- Gets smarter the more you use it!
+
+**New Scam Detection:**
+- Forex/trading scam patterns with flexible regex
+- Recruitment scam scoring system (telegram handles, DM requests, earnings claims)
+- Monthly community polls showing scammer takedown stats
+
+### 📊 Stats Command Update
+`/stats` now shows ML classifier status:
+```
+🤖 ML Classifier: Active
+🧠 Model: Ensemble (NB + LR + RF)
+📚 Training: 45 spam, 30 ham
+```
+
+## Previous Updates (v1.1.4)
   - `message_authors` - capped at 5,000 entries
   - `enhanced_messages` - capped at 2,000 entries
   - `report_cooldowns` - expired entries removed
