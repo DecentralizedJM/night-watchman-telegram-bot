@@ -889,6 +889,11 @@ class NightWatchman:
             elif result['action'] == 'flag':
                 # Log for review but don't act
                 logger.info(f"⚠️ Flagged message from {user_name}: {result['reasons']}")
+            else:
+                # Message is clean - learn as ham from trusted users
+                # Only learn from VIP (100+) or Trusted (50+) users for quality samples
+                if self.config.REPUTATION_ENABLED and user_rep >= 50 and text and len(text) > 15:
+                    self.detector.learn_ham(text)
                 
         except Exception as e:
             logger.error(f"Error handling update: {e}", exc_info=True)
@@ -1975,6 +1980,13 @@ I am a spam detection bot that protects Telegram groups from:
                     f"⚠️ <b>{target_name}</b> has been warned. "
                     f"Warnings: {warnings}/{self.config.AUTO_MUTE_AFTER_WARNINGS}"
                 )
+                
+                # Learn spam from warned message (if reply-to)
+                if reply_to and reply_to.get('text'):
+                    warned_text = reply_to.get('text', '')
+                    if len(warned_text) > 15:
+                        self.detector.learn_spam(warned_text)
+                        logger.info(f"📝 ML learning spam from /warn reply")
             else:
                 await self._send_message(chat_id, "⚠️ Usage: Reply to message, /warn @username, or /warn <user_id>")
             
@@ -1994,6 +2006,13 @@ I am a spam detection bot that protects Telegram groups from:
                 if banned:
                     await self._send_message(chat_id, f"🔨 <b>{target_name}</b> has been banned.")
                     self.stats['users_banned'] += 1
+                    
+                    # Learn spam from banned message (if reply-to)
+                    if reply_to and reply_to.get('text'):
+                        banned_text = reply_to.get('text', '')
+                        if len(banned_text) > 15:
+                            self.detector.learn_spam(banned_text)
+                            logger.info(f"📝 ML learning spam from /ban reply")
             else:
                 await self._send_message(chat_id, "⚠️ Usage: Reply to message, /ban @username, or /ban <user_id>")
                 
@@ -2016,6 +2035,13 @@ I am a spam detection bot that protects Telegram groups from:
                         f"🔇 <b>{target_name}</b> has been muted for {self.config.MUTE_DURATION_HOURS}h."
                     )
                     self.stats['users_muted'] += 1
+                    
+                    # Learn spam from muted message (if reply-to)
+                    if reply_to and reply_to.get('text'):
+                        muted_text = reply_to.get('text', '')
+                        if len(muted_text) > 15:
+                            self.detector.learn_spam(muted_text)
+                            logger.info(f"📝 ML learning spam from /mute reply")
             else:
                 await self._send_message(chat_id, "⚠️ Usage: Reply to message, /mute @username, or /mute <user_id>")
                 
@@ -2033,6 +2059,13 @@ I am a spam detection bot that protects Telegram groups from:
             if unwarn_target_id:
                 self.detector.clear_warnings(unwarn_target_id)
                 await self._send_message(chat_id, f"✅ Warnings cleared for <b>{target_name}</b>.")
+                
+                # Learn ham from unwarned message (if reply-to) - indicates false positive
+                if reply_to and reply_to.get('text'):
+                    unwarned_text = reply_to.get('text', '')
+                    if len(unwarned_text) > 15:
+                        self.detector.learn_ham(unwarned_text)
+                        logger.info(f"📝 ML learning ham from /unwarn (false positive correction)")
             else:
                 await self._send_message(chat_id, "⚠️ Usage: Reply to message, /unwarn @username, or /unwarn <user_id>")
             
