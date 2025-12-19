@@ -60,6 +60,13 @@ class SpamDetector:
     def __init__(self):
         self.config = Config()
         
+        # Whitelist of safe bot usernames (our own bot and known safe bots)
+        self.safe_bot_usernames = [
+            'mudrex_nightwatchman_bot',
+            'nightwatchman_bot',
+            # Add other safe bots as needed
+        ]
+        
         # Initialize ML classifier
         self.ml_classifier = None
         if ML_ENABLED:
@@ -389,12 +396,26 @@ class SpamDetector:
             result['triggers'].append("adult_content")
             return result
         
-        # 2. Telegram bot links (scam bots)
-        if self.telegram_bot_pattern.search(message):
-            result['instant_ban'] = True
-            result['reasons'].append("Telegram bot link detected")
-            result['triggers'].append("telegram_bot_link")
-            return result
+        # 2. Telegram bot links (scam bots) - but not our own bot or safe bots
+        bot_match = self.telegram_bot_pattern.search(message)
+        if bot_match:
+            matched_text = bot_match.group(0).lower()
+            # Check if it's a safe/whitelisted bot
+            is_safe_bot = False
+            for safe_bot in self.safe_bot_usernames:
+                if safe_bot in matched_text:
+                    is_safe_bot = True
+                    break
+            
+            # Also skip if it's a command format like /warn@botname
+            if message.strip().startswith('/'):
+                is_safe_bot = True  # Commands mentioning bots are not spam
+            
+            if not is_safe_bot:
+                result['instant_ban'] = True
+                result['reasons'].append("Telegram bot link detected")
+                result['triggers'].append("telegram_bot_link")
+                return result
         
         # 3. Casino/Betting spam - CONTEXTUAL detection
         # Definite casino spam (instant ban on these alone)
