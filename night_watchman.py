@@ -557,12 +557,19 @@ class NightWatchman:
             
             # Check for admin commands first (BEFORE skipping admin messages)
             if self.config.ADMIN_COMMANDS_ENABLED and text.startswith('/'):
-                if await self._is_admin(chat_id, user_id):
-                    logger.info(f"Processing admin command from {user_id}: {text}")
-                    await self._handle_admin_command(chat_id, user_id, text, message)
-                    return
-                else:
-                    logger.info(f"Command from non-admin {user_id}: {text}")
+                admin_commands = ['/warn', '/ban', '/mute', '/unwarn', '/enhance', '/stats', '/kick']
+                command_word = text.split()[0].lower().split('@')[0]  # Handle /warn@botname format
+                
+                if command_word in admin_commands:
+                    if await self._is_admin(chat_id, user_id):
+                        logger.info(f"Processing admin command from {user_id}: {text}")
+                        await self._handle_admin_command(chat_id, user_id, text, message)
+                        return
+                    else:
+                        # Non-admin trying to use admin command - delete silently
+                        logger.warning(f"⚠️ Non-admin {user_id} tried admin command: {text}")
+                        await self._delete_message(chat_id, message_id)
+                        return
             
             # Check for crypto/trading commands that should be redirected to Market Intelligence topic
             if text.startswith('/') and getattr(self.config, 'CRYPTO_COMMAND_REDIRECT_ENABLED', False):
@@ -1913,8 +1920,15 @@ I am a spam detection bot that protects Telegram groups from:
     async def _handle_admin_command(self, chat_id: int, user_id: int, text: str, message: Dict):
         """Handle admin commands"""
         logger.info(f"🔧 _handle_admin_command called: command='{text}', admin={user_id}")
+        
+        # Double-check admin status (security layer)
+        if not await self._is_admin(chat_id, user_id):
+            logger.warning(f"⛔ Non-admin {user_id} bypassed to _handle_admin_command, blocking")
+            await self._delete_message(chat_id, message.get('message_id'))
+            return
+        
         parts = text.split()
-        command = parts[0].lower()
+        command = parts[0].lower().split('@')[0]  # Handle /warn@botname format
         
         # Reply to message commands
         reply_to = message.get('reply_to_message')
