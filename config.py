@@ -175,12 +175,9 @@ class Config:
     # Whitelisted domains (always allowed)
     WHITELISTED_DOMAINS = [
         "mudrex.com",
-        "binance.com",
-        "bybit.com",
         "coingecko.com",
         "coinmarketcap.com",
         "tradingview.com",
-        "github.com",
     ]
     
     # New user settings
