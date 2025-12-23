@@ -1923,6 +1923,84 @@ I am a spam detection bot that protects Telegram groups from:
         # Welcome message is sent to the group, not personalized
         await self._send_message(chat_id, self.config.WELCOME_MESSAGE)
     
+    async def _get_user_id_from_username(self, chat_id: int, username: str) -> tuple:
+        """
+        Get user_id from @username by checking chat members.
+        Returns (user_id, full_name) or (None, None) if not found.
+        Note: This requires the bot to have seen the user in the chat.
+        """
+        username = username.lstrip('@').lower()
+        
+        # Try to get chat administrators first (they're always available)
+        try:
+            url = f"https://api.telegram.org/bot{self.token}/getChatAdministrators"
+            params = {'chat_id': chat_id}
+            response = await self.client.get(url, params=params, timeout=10.0)
+            data = response.json()
+            
+            if data.get('ok'):
+                for admin in data.get('result', []):
+                    user = admin.get('user', {})
+                    admin_username = user.get('username', '').lower()
+                    if admin_username == username:
+                        user_id = user.get('id')
+                        full_name = user.get('first_name', 'User')
+                        return (user_id, full_name)
+        except Exception as e:
+            logger.error(f"Error fetching chat admins: {e}")
+        
+        # If not found in admins, check tracked users (from recent messages)
+        # This is limited but better than nothing
+        return (None, None)
+    
+    async def _parse_target_from_command(self, text: str, message: Dict) -> tuple:
+        """
+        Parse target user from command text.
+        Supports: @username, user_id (numeric), or text_mention entities.
+        Returns (user_id, display_name) or (None, None) if not found.
+        """
+        chat_id = message.get('chat', {}).get('id')
+        parts = text.split()
+        
+        # Check message entities for @username or text_mention
+        entities = message.get('entities', [])
+        for entity in entities:
+            if entity.get('type') == 'text_mention':
+                # Direct user mention with user object
+                mentioned_user = entity.get('user', {})
+                user_id = mentioned_user.get('id')
+                full_name = mentioned_user.get('first_name', 'User')
+                return (user_id, full_name)
+            elif entity.get('type') == 'mention':
+                # @username mention - extract username and try to resolve
+                offset = entity.get('offset', 0)
+                length = entity.get('length', 0)
+                username = text[offset:offset+length].lstrip('@')
+                user_id, full_name = await self._get_user_id_from_username(chat_id, username)
+                if user_id:
+                    return (user_id, full_name)
+                else:
+                    # Return username as display name even if we can't resolve ID
+                    return (None, f"@{username}")
+        
+        # Check command arguments
+        if len(parts) > 1:
+            arg = parts[1].lstrip('@')
+            
+            # Try as numeric user_id first
+            try:
+                user_id = int(arg)
+                return (user_id, f"User {user_id}")
+            except ValueError:
+                # It's a username - try to resolve it
+                user_id, full_name = await self._get_user_id_from_username(chat_id, arg)
+                if user_id:
+                    return (user_id, full_name)
+                else:
+                    return (None, f"@{arg}")
+        
+        return (None, None)
+    
     async def _handle_admin_command(self, chat_id: int, user_id: int, text: str, message: Dict):
         """Handle admin commands"""
         logger.info(f"🔧 _handle_admin_command called: command='{text}', admin={user_id}")
@@ -1936,64 +2014,29 @@ I am a spam detection bot that protects Telegram groups from:
         parts = text.split()
         command = parts[0].lower().split('@')[0]  # Handle /warn@botname format
         
-        # Reply to message commands
+        # Try to get target from reply first, then from command arguments
         reply_to = message.get('reply_to_message')
         target_user_id = None
         target_name = None
         
         if reply_to:
+            # Reply-to-message takes priority
             target_user_id = reply_to.get('from', {}).get('id')
             target_name = reply_to.get('from', {}).get('first_name', 'User')
-            logger.info(f"Reply detected: target_user_id={target_user_id}")
-        
-        # Check for mention in message entities (handles @username)
-        if not target_user_id:
-            entities = message.get('entities', [])
-            for entity in entities:
-                if entity.get('type') == 'text_mention':
-                    # Direct user mention with user object
-                    mentioned_user = entity.get('user', {})
-                    target_user_id = mentioned_user.get('id')
-                    target_name = mentioned_user.get('first_name', 'User')
-                    logger.info(f"Text mention detected: target_user_id={target_user_id}")
-                    break
-                elif entity.get('type') == 'mention':
-                    # @username mention - extract username from text
-                    offset = entity.get('offset', 0)
-                    length = entity.get('length', 0)
-                    mentioned_username = text[offset:offset+length].lstrip('@')
-                    target_name = f"@{mentioned_username}"
-                    logger.info(f"Username mention detected: {target_name}")
-                    # We have username but not user_id - will need to handle differently
-                    break
-        
-        # Check for user_id passed as argument (if still no target)
-        if not target_user_id and len(parts) > 1:
-            arg = parts[1].lstrip('@')
-            try:
-                target_user_id = int(arg)
-                if not target_name:
-                    target_name = f"User {target_user_id}"
-            except ValueError:
-                # It's a username without @ or with @ but not in entities
-                if not target_name:
-                    target_name = f"@{arg}"
-                # Can't resolve username to ID without API call
-                pass
+            target_username = reply_to.get('from', {}).get('username', '')
+            logger.info(f"Reply detected: target_user_id={target_user_id}, name={target_name}")
+        else:
+            # Parse from @username or user_id in command
+            target_user_id, target_name = await self._parse_target_from_command(text, message)
+            if target_user_id:
+                logger.info(f"Target parsed from command: user_id={target_user_id}, name={target_name}")
+            elif target_name:
+                logger.warning(f"Found username {target_name} but couldn't resolve to user_id")
+
         
         if command == '/warn':
-            # Support reply-to-message, @username, or user ID
-            warn_target_id = target_user_id
-            target_name = reply_to.get('from', {}).get('first_name', 'User') if reply_to else None
-            
-            if not warn_target_id:
-                parsed_id, parsed_name = await self._parse_target_from_command(text, message)
-                if parsed_id:
-                    warn_target_id = parsed_id
-                    target_name = parsed_name
-            
-            if warn_target_id:
-                warnings = self.detector.add_warning(warn_target_id)
+            if target_user_id:
+                warnings = self.detector.add_warning(target_user_id)
                 self.stats['users_warned'] += 1
                 await self._send_message(
                     chat_id,
@@ -2011,18 +2054,8 @@ I am a spam detection bot that protects Telegram groups from:
                 await self._send_message(chat_id, "⚠️ Usage: Reply to message, /warn @username, or /warn <user_id>")
             
         elif command == '/ban':
-            # Support reply-to-message, @username, or user ID
-            ban_target_id = target_user_id
-            target_name = reply_to.get('from', {}).get('first_name', 'User') if reply_to else None
-            
-            if not ban_target_id:
-                parsed_id, parsed_name = await self._parse_target_from_command(text, message)
-                if parsed_id:
-                    ban_target_id = parsed_id
-                    target_name = parsed_name
-            
-            if ban_target_id:
-                banned = await self._ban_user(chat_id, ban_target_id)
+            if target_user_id:
+                banned = await self._ban_user(chat_id, target_user_id)
                 if banned:
                     await self._send_message(chat_id, f"🔨 <b>{target_name}</b> has been banned.")
                     self.stats['users_banned'] += 1
@@ -2037,18 +2070,8 @@ I am a spam detection bot that protects Telegram groups from:
                 await self._send_message(chat_id, "⚠️ Usage: Reply to message, /ban @username, or /ban <user_id>")
                 
         elif command == '/mute':
-            # Support reply-to-message, @username, or user ID
-            mute_target_id = target_user_id
-            target_name = reply_to.get('from', {}).get('first_name', 'User') if reply_to else None
-            
-            if not mute_target_id:
-                parsed_id, parsed_name = await self._parse_target_from_command(text, message)
-                if parsed_id:
-                    mute_target_id = parsed_id
-                    target_name = parsed_name
-            
-            if mute_target_id:
-                muted = await self._mute_user(chat_id, mute_target_id)
+            if target_user_id:
+                muted = await self._mute_user(chat_id, target_user_id)
                 if muted:
                     await self._send_message(
                         chat_id,
@@ -2066,18 +2089,8 @@ I am a spam detection bot that protects Telegram groups from:
                 await self._send_message(chat_id, "⚠️ Usage: Reply to message, /mute @username, or /mute <user_id>")
                 
         elif command == '/unwarn':
-            # Support reply-to-message, @username, or user ID
-            unwarn_target_id = target_user_id
-            target_name = reply_to.get('from', {}).get('first_name', 'User') if reply_to else None
-            
-            if not unwarn_target_id:
-                parsed_id, parsed_name = await self._parse_target_from_command(text, message)
-                if parsed_id:
-                    unwarn_target_id = parsed_id
-                    target_name = parsed_name
-            
-            if unwarn_target_id:
-                self.detector.clear_warnings(unwarn_target_id)
+            if target_user_id:
+                self.detector.clear_warnings(target_user_id)
                 await self._send_message(chat_id, f"✅ Warnings cleared for <b>{target_name}</b>.")
                 
                 # Learn ham from unwarned message (if reply-to) - indicates false positive
