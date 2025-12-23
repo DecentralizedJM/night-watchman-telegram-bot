@@ -577,6 +577,12 @@ class NightWatchman:
                 if redirected:
                     return  # Command was redirected, don't process further
             
+            # If message starts with '/', it's a command that wasn't handled above
+            # Silently ignore unknown commands (don't run spam detection on them)
+            if text.startswith('/'):
+                logger.debug(f"Unknown command from {user_name}: {text.split()[0]}")
+                return
+            
             # Skip messages from admins (don't moderate them)
             if await self._is_admin(chat_id, user_id):
                 # Still track admin activity for stats (but they don't get rep points)
