@@ -17,41 +17,101 @@ try:
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.naive_bayes import MultinomialNB
     from sklearn.linear_model import LogisticRegression
-    from sklearn.ensemble import RandomForestClassifier, VotingClassifier
+    from sklearn.ensemble import RandomForestClassifier, VotingClassifier, GradientBoostingClassifier
+    from sklearn.neural_network import MLPClassifier
     import pickle
+    import numpy as np
     ML_AVAILABLE = True
 except ImportError:
     ML_AVAILABLE = False
     logger.warning("scikit-learn not installed. ML classifier disabled.")
 
+# Check if sentence-transformers is available
+try:
+    from sentence_transformers import SentenceTransformer
+    EMBEDDINGS_AVAILABLE = True
+except ImportError:
+    EMBEDDINGS_AVAILABLE = False
+    logger.warning("sentence-transformers not installed. Semantic analysis disabled.")
+
 
 class SpamClassifier:
     """
-    Machine Learning based spam classifier using Ensemble Voting.
-    Combines Naive Bayes, Logistic Regression, and Random Forest for robust detection.
-    Learns from training data and admin actions.
+    Machine Learning based spam classifier using Hybrid Approach.
+    
+    Modes:
+    1. Standard: TF-IDF + Ensemble (NB, LR, RF)
+    2. Advanced: Sentence Embeddings + Gradient Boosting + Manual Features
     """
     
     def __init__(self, data_dir: str = "data"):
         self.data_dir = data_dir
+        
+        # Paths for standard model
         self.model_path = os.path.join(data_dir, "spam_model_v2.pkl")
         self.vectorizer_path = os.path.join(data_dir, "spam_vectorizer.pkl")
+        
+        # Paths for advanced model
+        self.advanced_model_path = os.path.join(data_dir, "spam_model_advanced.pkl")
+        
         self.dataset_path = os.path.join(data_dir, "spam_dataset.json")
         
         self.vectorizer = None
         self.model = None
+        self.advanced_model = None
+        self.embedding_model = None
+        
         self.is_trained = False
-        self.min_training_samples = 20  # Minimum samples needed to train
+        self.min_training_samples = 20
         
         # Ensure data directory exists
         os.makedirs(data_dir, exist_ok=True)
         
+        # Initialize Sentence Transformer if available
+        if EMBEDDINGS_AVAILABLE:
+            try:
+                logger.info("⏳ Loading Sentence Transformer (this may take a moment)...")
+                # 'all-MiniLM-L6-v2' is small (80MB) and fast
+                self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+                logger.info("✅ Sentence Transformer loaded")
+            except Exception as e:
+                logger.error(f"Failed to load embedding model: {e}")
+                EMBEDDINGS_AVAILABLE = False
+        
         # Load or initialize dataset
         self.dataset = self._load_dataset()
         
-        # Load or train model
+        # Load or train models
         if ML_AVAILABLE:
             self._load_or_train_model()
+    
+    def _extract_manual_features(self, text: str) -> List[float]:
+        """
+        Extract heuristic features that often indicate spam.
+        Returns a list of numerical features.
+        """
+        if not text:
+            return [0.0] * 5
+            
+        text_len = len(text)
+        caps_count = sum(1 for c in text if c.isupper())
+        caps_ratio = caps_count / text_len if text_len > 0 else 0
+        
+        # Count links (URLs)
+        link_count = len(re.findall(r'https?://|t\.me/', text.lower()))
+        
+        # Count emojis (simple regex approximation)
+        # Ranges: Miscellaneous Symbols and Pictographs, Emoticons, Transport and Map Symbols
+        emoji_count = len(re.findall(r'[\U0001F300-\U0001F6FF]', text))
+        
+        # Count "suspicious" characters (e.g. monetary symbols)
+        money_count = len(re.findall(r'[\$\€\£]', text))
+        
+        # Feature vector: [length_norm, caps_ratio, link_count, emoji_count, money_count]
+        # Normalize length (cap at 4096 chars)
+        norm_len = min(text_len, 4096) / 4096.0
+        
+        return [norm_len, caps_ratio, float(link_count), float(emoji_count), float(money_count)]
     
     def _load_dataset(self) -> Dict:
         """Load training dataset from file."""
@@ -181,121 +241,161 @@ class SpamClassifier:
         return text
     
     def _load_or_train_model(self):
-        """Load existing model or train a new one."""
+        """Load existing models or train new ones."""
         if not ML_AVAILABLE:
             return
         
-        # Try to load existing model and vectorizer
+        # 1. Try to load Standard Model
+        standard_loaded = False
         if os.path.exists(self.model_path) and os.path.exists(self.vectorizer_path):
             try:
                 with open(self.vectorizer_path, 'rb') as f:
                     self.vectorizer = pickle.load(f)
                 with open(self.model_path, 'rb') as f:
                     self.model = pickle.load(f)
-                self.is_trained = True
-                logger.info("📚 ML ensemble model loaded from file")
-                return
+                standard_loaded = True
+                logger.info("📚 Standard ML model loaded")
             except Exception as e:
-                logger.error(f"Error loading model: {e}")
+                logger.error(f"Error loading standard model: {e}")
         
-        # Train new model
-        self._train_model()
+        # 2. Try to load Advanced Model
+        advanced_loaded = False
+        if EMBEDDINGS_AVAILABLE and os.path.exists(self.advanced_model_path):
+            try:
+                with open(self.advanced_model_path, 'rb') as f:
+                    self.advanced_model = pickle.load(f)
+                advanced_loaded = True
+                logger.info("🧠 Advanced AI model loaded")
+            except Exception as e:
+                logger.error(f"Error loading advanced model: {e}")
+                
+        self.is_trained = standard_loaded or advanced_loaded
+        
+        # Train if missing
+        if not standard_loaded or (EMBEDDINGS_AVAILABLE and not advanced_loaded):
+            self._train_models()
     
-    def _train_model(self):
-        """Train the ensemble spam classifier."""
+    def _train_models(self):
+        """Train available models."""
         if not ML_AVAILABLE:
             return
         
         spam_samples = self.dataset.get("spam", [])
         ham_samples = self.dataset.get("ham", [])
-        
         total_samples = len(spam_samples) + len(ham_samples)
         
         if total_samples < self.min_training_samples:
             logger.warning(f"Not enough training data ({total_samples}/{self.min_training_samples})")
             return
+
+        # Prepare labels
+        labels = [1] * len(spam_samples) + [0] * len(ham_samples)
         
-        # Prepare training data
-        texts = []
-        labels = []
-        
-        for text in spam_samples:
-            texts.append(self._preprocess_text(text))
-            labels.append(1)  # 1 = spam
-        
-        for text in ham_samples:
-            texts.append(self._preprocess_text(text))
-            labels.append(0)  # 0 = ham (not spam)
-        
+        # --- Train Standard Model (TF-IDF) ---
         try:
-            # Create TF-IDF vectorizer
-            self.vectorizer = TfidfVectorizer(
-                max_features=1500,
-                ngram_range=(1, 2),  # Use unigrams and bigrams
-                min_df=1,
-                stop_words='english'
-            )
+            texts = [self._preprocess_text(t) for t in spam_samples + ham_samples]
             
-            # Transform texts to features
+            # Vectorizer
+            self.vectorizer = TfidfVectorizer(
+                max_features=2000,
+                analyzer='char_wb',
+                ngram_range=(3, 5),
+                min_df=1
+            )
             X = self.vectorizer.fit_transform(texts)
             
-            # Create ensemble with 3 classifiers
-            nb_clf = MultinomialNB(alpha=0.1)
-            lr_clf = LogisticRegression(max_iter=1000, random_state=42)
-            rf_clf = RandomForestClassifier(n_estimators=50, max_depth=10, random_state=42)
-            
-            # Voting classifier - soft voting uses predicted probabilities
+            # Ensemble
             self.model = VotingClassifier(
                 estimators=[
-                    ('naive_bayes', nb_clf),
-                    ('logistic_regression', lr_clf),
-                    ('random_forest', rf_clf)
+                    ('naive_bayes', MultinomialNB(alpha=0.1)),
+                    ('logistic_regression', LogisticRegression(max_iter=1000, random_state=42)),
+                    ('random_forest', RandomForestClassifier(n_estimators=50, max_depth=10, random_state=42))
                 ],
-                voting='soft'  # Use probability-based voting
+                voting='soft'
             )
-            
             self.model.fit(X, labels)
-            self.is_trained = True
             
-            # Save model and vectorizer
+            # Save Standard
             with open(self.vectorizer_path, 'wb') as f:
                 pickle.dump(self.vectorizer, f)
             with open(self.model_path, 'wb') as f:
                 pickle.dump(self.model, f)
             
-            logger.info(f"🤖 ML ensemble model trained: {len(spam_samples)} spam + {len(ham_samples)} ham samples (3 classifiers)")
+            logger.info("✅ Standard model trained")
         except Exception as e:
-            logger.error(f"Error training model: {e}")
-            self.is_trained = False
-    
+            logger.error(f"Error training standard model: {e}")
+
+        # --- Train Advanced Model (Embeddings + GradientBoosting) ---
+        if EMBEDDINGS_AVAILABLE and self.embedding_model:
+            try:
+                raw_texts = spam_samples + ham_samples
+                
+                # 1. Generate Embeddings (Dense Vectors)
+                embeddings = self.embedding_model.encode(raw_texts)
+                
+                # 2. Extract Manual Features
+                manual_features = np.array([self._extract_manual_features(t) for t in raw_texts])
+                
+                # 3. Combine Features
+                X_advanced = np.hstack((embeddings, manual_features))
+                
+                # 4. Train Gradient Boosting (Handle complex non-linear relationships)
+                self.advanced_model = GradientBoostingClassifier(
+                    n_estimators=100,
+                    learning_rate=0.1,
+                    max_depth=5,
+                    random_state=42
+                )
+                self.advanced_model.fit(X_advanced, labels)
+                
+                # Save Advanced
+                with open(self.advanced_model_path, 'wb') as f:
+                    pickle.dump(self.advanced_model, f)
+                    
+                logger.info("🧠 Advanced AI model trained (Embeddings + Gradient Boosting)")
+            except Exception as e:
+                logger.error(f"Error training advanced model: {e}")
+
+        self.is_trained = True
+
     def predict(self, text: str) -> Tuple[bool, float]:
         """
-        Predict if a message is spam using ensemble voting.
-        
-        Returns:
-            Tuple of (is_spam: bool, confidence: float)
+        Predict spam using the best available model.
         """
-        if not ML_AVAILABLE or not self.is_trained or not self.model or not self.vectorizer:
+        if not ML_AVAILABLE or not self.is_trained:
             return False, 0.0
+            
+        # Try Advanced Model first
+        if EMBEDDINGS_AVAILABLE and self.advanced_model and self.embedding_model:
+            try:
+                # Generate features
+                emb = self.embedding_model.encode([text])
+                manual = np.array([self._extract_manual_features(text)])
+                X_input = np.hstack((emb, manual))
+                
+                # Predict
+                probs = self.advanced_model.predict_proba(X_input)[0]
+                is_spam = probs[1] > 0.5  # Threshold
+                confidence = probs[1] if is_spam else probs[0]
+                
+                return bool(is_spam), float(confidence)
+            except Exception as e:
+                logger.error(f"Advanced prediction failed, falling back: {e}")
         
-        try:
-            processed = self._preprocess_text(text)
-            
-            # Transform text using vectorizer
-            X = self.vectorizer.transform([processed])
-            
-            # Get prediction and probability from ensemble
-            prediction = self.model.predict(X)[0]
-            probabilities = self.model.predict_proba(X)[0]
-            
-            is_spam = prediction == 1
-            confidence = probabilities[1] if is_spam else probabilities[0]
-            
-            return is_spam, float(confidence)
-        except Exception as e:
-            logger.error(f"Error predicting: {e}")
-            return False, 0.0
-    
+        # Fallback to Standard Model
+        if self.model and self.vectorizer:
+            try:
+                processed = self._preprocess_text(text)
+                X = self.vectorizer.transform([processed])
+                probs = self.model.predict_proba(X)[0]
+                is_spam = probs[1] > 0.5
+                confidence = probs[1] if is_spam else probs[0]
+                return bool(is_spam), float(confidence)
+            except Exception as e:
+                logger.error(f"Standard prediction failed: {e}")
+                
+        return False, 0.0
+
     def add_spam_sample(self, text: str):
         """Add a message to the spam training set."""
         if text and len(text) > 10:
@@ -318,10 +418,15 @@ class SpamClassifier:
     
     def get_stats(self) -> Dict:
         """Get classifier statistics."""
+        model_type = "Standard (Ensemble)"
+        if self.advanced_model:
+            model_type = "Hybrid (Ensemble + GradientBoosting/Embeddings)"
+            
         return {
             "ml_available": ML_AVAILABLE,
+            "embeddings_available": EMBEDDINGS_AVAILABLE,
             "is_trained": self.is_trained,
-            "model_type": "Ensemble (NB + LR + RF)" if self.is_trained else "Not trained",
+            "model_type": model_type if self.is_trained else "Not trained",
             "spam_samples": len(self.dataset.get("spam", [])),
             "ham_samples": len(self.dataset.get("ham", [])),
             "last_updated": self.dataset.get("last_updated", "never")
