@@ -89,13 +89,27 @@ class SpamDetector:
             result['spam_score'] += url_score
             result['reasons'].append(f"Suspicious URLs detected")
             result['details']['urls'] = url_details
-        
+            
+            # Non-whitelisted links = immediate action if high score
+            # Specifically check for instagram links or other social links often used for spam
+            if any(u for u in url_details['suspicious']):
+                 # Immediate mute for suspicious/non-whitelisted links
+                 result['action'] = 'mute_24h' # Custom action for handler
+                 result['is_spam'] = True
+                 result['spam_score'] = 1.0 
+
         # 3. New user posting links
         if user_join_date:
             new_user_score = self._check_new_user(user_id, user_join_date, message)
             if new_user_score > 0:
+                # If they say simple greetings, don't penalize as heavily unless back-to-back
+                if len(message.split()) < 5 and not self.url_pattern.search(message):
+                     # Short message, likely greeting. Reduce score
+                     new_user_score = 0.1 
+                
                 result['spam_score'] += new_user_score
-                result['reasons'].append("New user posting links")
+                if new_user_score > 0.3:
+                    result['reasons'].append("New user posting links")
         
         # 4. Rate limiting check
         rate_score = self._check_rate_limit(user_id)
@@ -191,14 +205,20 @@ class SpamDetector:
             
             # Check suspicious domains
             is_suspicious = any(domain in url_lower for domain in self.config.SUSPICIOUS_DOMAINS)
+            # Instagram is not implicitly suspicious but is not whitelisted, so we trap it
+            if "instagram.com" in url_lower or "youtu.be" in url_lower or "youtube.com" in url_lower:
+                # Treat as suspicious because it's non-whitelisted external link
+                is_suspicious = True
+                
             if is_suspicious:
                 details['suspicious'].append(url)
-                score += 0.4
+                score += 0.8 # High score for known suspicious/unwanted links
             else:
                 # Unknown external link
-                score += 0.2
+                details['suspicious'].append(url) # Treat all unknown as suspicious for now per request
+                score += 0.8
         
-        return min(score, 0.8), details
+        return min(score, 1.0), details
     
     def _check_new_user(self, user_id: int, join_date: datetime, message: str) -> float:
         """Check if new user is posting links"""
@@ -211,10 +231,24 @@ class SpamDetector:
                 return 0.6
         return 0.0
     
+    # Security: Maximum users to track in memory (prevents memory exhaustion)
+    MAX_TRACKED_USERS = 10000
+    
     def _check_rate_limit(self, user_id: int) -> float:
         """Check if user is sending too many messages"""
         now = datetime.now(timezone.utc)
         one_minute_ago = now - timedelta(minutes=1)
+        
+        # Security: Prune stale users to prevent memory exhaustion
+        if len(self.user_messages) > self.MAX_TRACKED_USERS:
+            # Remove users with oldest activity
+            stale_users = []
+            for uid, timestamps in self.user_messages.items():
+                if not timestamps or all(t < one_minute_ago for t in timestamps):
+                    stale_users.append(uid)
+            for uid in stale_users[:len(stale_users)//2]:  # Remove half of stale users
+                del self.user_messages[uid]
+            logger.info(f"🛡️ Pruned {len(stale_users[:len(stale_users)//2])} stale users from rate-limit tracker")
         
         # Clean old messages
         if user_id in self.user_messages:

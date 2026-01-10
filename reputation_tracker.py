@@ -81,16 +81,60 @@ class ReputationTracker:
                 'joined': datetime.now(timezone.utc).isoformat(),
                 'last_active': datetime.now(timezone.utc).isoformat(),
                 'warnings': 0,
-                'valid_reports': 0
+                'valid_reports': 0,
+                'daily_points_earned': {},  # Track daily gains for abuse prevention
+                'last_report_credit': None  # Cooldown for report credits
             }
     
     # ==================== Points Management ====================
     
+    # Security: Maximum points a user can earn per day (prevents farming)
+    MAX_DAILY_POINTS = 50
+    # Security: Minimum seconds between report credits
+    REPORT_CREDIT_COOLDOWN_SECONDS = 300  # 5 minutes
+    
+    def _get_daily_points_earned(self, user_id: int) -> int:
+        """Get points earned by user today (for abuse prevention)"""
+        key = self._get_user_key(user_id)
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        user_data = self.data['users'].get(key, {})
+        return user_data.get('daily_points_earned', {}).get(today, 0)
+    
+    def _record_daily_points(self, user_id: int, points: int):
+        """Record points earned today for abuse tracking"""
+        if points <= 0:
+            return  # Only track gains
+        key = self._get_user_key(user_id)
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if 'daily_points_earned' not in self.data['users'][key]:
+            self.data['users'][key]['daily_points_earned'] = {}
+        current = self.data['users'][key]['daily_points_earned'].get(today, 0)
+        self.data['users'][key]['daily_points_earned'][today] = current + points
+        # Cleanup old days (keep last 7)
+        days = list(self.data['users'][key]['daily_points_earned'].keys())
+        for d in days:
+            if d < (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d"):
+                del self.data['users'][key]['daily_points_earned'][d]
+    
     def add_points(self, user_id: int, points: int, reason: str = "", 
                    username: str = "", first_name: str = "") -> int:
-        """Add points to user, return new total"""
+        """Add points to user, return new total. Enforces daily cap for positive gains."""
         self._ensure_user(user_id, username, first_name)
         key = self._get_user_key(user_id)
+        
+        # Security: Enforce daily cap for positive point gains
+        if points > 0:
+            daily_earned = self._get_daily_points_earned(user_id)
+            remaining_allowance = max(0, self.MAX_DAILY_POINTS - daily_earned)
+            if remaining_allowance == 0:
+                logger.warning(f"🛡️ Rep abuse prevention: {user_id} hit daily cap, ignoring +{points} ({reason})")
+                return self.data['users'][key]['points']
+            # Cap the gain
+            actual_points = min(points, remaining_allowance)
+            if actual_points < points:
+                logger.info(f"🛡️ Rep capped: {user_id} +{actual_points} (requested +{points}, daily limit)")
+            points = actual_points
+            self._record_daily_points(user_id, points)
         
         self.data['users'][key]['points'] += points
         self.data['users'][key]['last_active'] = datetime.now(timezone.utc).isoformat()
@@ -211,10 +255,25 @@ class ReputationTracker:
         return self.add_points(user_id, self.config.REP_UNMUTE_BONUS, "unmuted (false positive)")
     
     def on_valid_report(self, user_id: int, username: str = "", first_name: str = "") -> int:
-        """Called when user's spam report leads to action"""
+        """Called when user's spam report leads to action. Enforces cooldown to prevent abuse."""
         self._ensure_user(user_id, username, first_name)
         key = self._get_user_key(user_id)
+        
+        # Security: Enforce cooldown between report credits
+        now = datetime.now(timezone.utc)
+        last_credit_str = self.data['users'][key].get('last_report_credit')
+        if last_credit_str:
+            try:
+                last_credit = datetime.fromisoformat(last_credit_str)
+                elapsed = (now - last_credit).total_seconds()
+                if elapsed < self.REPORT_CREDIT_COOLDOWN_SECONDS:
+                    logger.info(f"🛡️ Report credit cooldown: {user_id} must wait {int(self.REPORT_CREDIT_COOLDOWN_SECONDS - elapsed)}s")
+                    return self.get_points(user_id)  # No points awarded
+            except (ValueError, TypeError):
+                pass  # Invalid date, proceed
+        
         self.data['users'][key]['valid_reports'] += 1
+        self.data['users'][key]['last_report_credit'] = now.isoformat()
         self._save_data()
         return self.add_points(user_id, self.config.REP_VALID_REPORT, "valid spam report", username, first_name)
     

@@ -4,6 +4,7 @@ Telegram Spam Detection & Moderation
 """
 
 import asyncio
+import html
 import logging
 import os
 import sys
@@ -18,6 +19,14 @@ from analytics_tracker import AnalyticsTracker
 from reputation_tracker import ReputationTracker
 
 load_dotenv()
+
+
+def html_escape(text: str) -> str:
+    """Escape user-provided text to prevent HTML injection in Telegram messages."""
+    if not text:
+        return ""
+    return html.escape(str(text), quote=False)
+
 
 # Setup logging
 os.makedirs("logs", exist_ok=True)
@@ -89,6 +98,13 @@ class NightWatchman:
             'bad_language_detected': 0,
             'suspicious_users_detected': 0,
             'start_time': datetime.now(timezone.utc)
+        }
+        
+        # Security: Track recent moderation actions for anomaly detection
+        self.security_events = {
+            'bans_last_hour': [],
+            'mutes_last_hour': [],
+            'warnings_last_hour': []
         }
         
         self.running = True
@@ -176,6 +192,7 @@ class NightWatchman:
                     # Create a fake chat_member update for each member
                     fake_update = {
                         'chat': {'id': chat_id},
+                        'from': message.get('from'),  # Pass the user who added them
                         'new_chat_member': {
                             'user': member,
                             'status': 'member'
@@ -248,9 +265,19 @@ class NightWatchman:
                     else:
                         # Delete and warn
                         await self._delete_message(chat_id, message_id)
+                        
+                        warning_msg = f"⚠️ <b>{user_name}</b>, forwarding messages is not allowed. Build reputation to unlock this feature."
+                        if self.config.REPUTATION_ENABLED:
+                             # Lower warning penalty for forwarding
+                             current_warnings = self.detector.get_warnings(user_id)
+                             if current_warnings < 1: # Give one free pass
+                                 warning_msg += "\n(First warning free)"
+                             else:
+                                 self.detector.add_warning(user_id)
+
                         await self._send_message(
                             chat_id,
-                            f"⚠️ <b>{user_name}</b>, forwarding messages is not allowed. Build reputation to unlock this feature."
+                            warning_msg
                         )
                         return
             
@@ -267,8 +294,35 @@ class NightWatchman:
             # Analyze message for spam and bad language
             result = self.detector.analyze(text, user_id, join_date)
             
+            # REPUTATION CHECK: Higher reputation users get leniency
+            is_high_rep = False
+            if self.config.REPUTATION_ENABLED:
+                if self.reputation.is_trusted(user_id):
+                    is_high_rep = True
+                    # Downgrade actions for trusted users
+                    if result['action'] == 'delete_and_ban':
+                        result['action'] = 'delete_and_warn'
+                        result['reasons'].append("(High Reputation: Ban avoided)")
+                    elif result['action'] == 'delete_and_warn':
+                         # Only delete, don't warn trusted users immediately
+                         # unless it's very severe (spam score > 0.9)
+                        if result['spam_score'] < 0.9:
+                            result['action'] = 'delete'
+                            result['reasons'].append("(High Reputation: Warning avoided)")
+
             # Handle non-Indian language spam with immediate ban
             if result.get('immediate_ban') and result.get('non_indian_language'):
+                # Bypass for high rep users
+                if is_high_rep:
+                     logger.info(f"🛡️ High reputation user {user_name} used non-Indian language, sparing ban.")
+                     # Just delete, don't ban
+                     await self._delete_message(chat_id, message_id)
+                     await self._send_message(
+                        chat_id,
+                        f"⚠️ <b>{user_name}</b>, non-Indian languages are not allowed here."
+                    )
+                     return
+
                 await self._handle_non_indian_spam(
                     chat_id=chat_id,
                     message_id=message_id,
@@ -281,7 +335,13 @@ class NightWatchman:
                 return  # Don't process further
             
             # Handle bad language separately
+            # If bad language is detected, handle it and skip spam handling to avoid duplicate actions
             if result.get('bad_language') and self.config.BAD_LANGUAGE_ENABLED:
+                # Bypass strict actions for high rep users
+                if is_high_rep:
+                    # Just warn instead of mute/delete if it was set to severe
+                    self.config.BAD_LANGUAGE_ACTION = 'warn' 
+
                 await self._handle_bad_language(
                     chat_id=chat_id,
                     message_id=message_id,
@@ -291,17 +351,32 @@ class NightWatchman:
                     text=text,
                     result=result
                 )
+                # Return after handling bad language to prevent duplicate deletion/warnings
+                # Bad language already contributes to spam_score, so we handle it separately
+                return
             
             if result['is_spam']:
-                await self._handle_spam(
-                    chat_id=chat_id,
-                    message_id=message_id,
-                    user_id=user_id,
-                    user_name=user_name,
-                    username=username,
-                    text=text,
-                    result=result
-                )
+                # Handle special mute_24h action from spam detector
+                if result.get('action') == 'mute_24h':
+                     logger.warning(f"🔇 Immediate mute for {user_name} due to disallowed link")
+                     await self._delete_message(chat_id, message_id)
+                     muted = await self._mute_user(chat_id, user_id)
+                     if muted:
+                        self.stats['users_muted'] += 1
+                        await self._send_message(
+                            chat_id,
+                            f"🔇 <b>{user_name}</b> has been muted for {self.config.MUTE_DURATION_HOURS}h for posting disallowed links."
+                        )
+                else:
+                    await self._handle_spam(
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        user_id=user_id,
+                        user_name=user_name,
+                        username=username,
+                        text=text,
+                        result=result
+                    )
             elif result['action'] == 'flag':
                 # Log for review but don't act
                 logger.info(f"⚠️ Flagged message from {user_name}: {result['reasons']}")
@@ -318,6 +393,16 @@ class NightWatchman:
             user_id = user.get('id')
             status = new_member.get('status')
             
+            # Check if added by admin - bypass all checks
+            added_by = chat_member.get('from', {})
+            if added_by:
+                added_by_id = added_by.get('id')
+                if added_by_id and user_id != added_by_id:  # If added by someone else
+                    user_is_admin = await self._is_admin(chat_id, added_by_id)
+                    if user_is_admin and user.get('is_bot'):
+                        logger.info(f"✨ Bot {user_id} added by admin {added_by_id}, allowing")
+                        return
+
             if status == 'member':
                 # User just joined
                 member_key = f"{chat_id}_{user_id}"
@@ -396,6 +481,18 @@ class NightWatchman:
         if self.config.AUTO_WARN_USER and result['is_spam']:
             warnings = self.detector.add_warning(user_id)
             self.stats['users_warned'] += 1
+
+            # Track in analytics
+            if self.config.ANALYTICS_ENABLED:
+                self.analytics.track_warning(chat_id)
+            
+            # Security: Track warning for anomaly detection
+            now = datetime.now(timezone.utc)
+            self.security_events['warnings_last_hour'].append(now)
+            one_hour_ago = now - timedelta(hours=1)
+            self.security_events['warnings_last_hour'] = [
+                t for t in self.security_events['warnings_last_hour'] if t > one_hour_ago
+            ]
             
             # Track in reputation
             if self.config.REPUTATION_ENABLED:
@@ -446,17 +543,23 @@ class NightWatchman:
     async def _report_to_admin(self, user_id: int, user_name: str, username: str,
                                chat_id: int, text: str, result: Dict):
         """Send spam report to admin"""
+        # Escape user-provided content to prevent HTML injection
+        safe_user_name = html_escape(user_name)
+        safe_username = html_escape(username) if username else 'N/A'
+        safe_text = html_escape(text[:500])
+        safe_reasons = [html_escape(r) for r in result.get('reasons', [])]
+        
         report = f"""🚨 <b>Spam Detected</b>
 
-👤 User: {user_name} (@{username or 'N/A'})
+👤 User: {safe_user_name} (@{safe_username})
 🆔 User ID: <code>{user_id}</code>
 💬 Chat: <code>{chat_id}</code>
 
 📝 <b>Message:</b>
-<code>{text[:500]}</code>
+<code>{safe_text}</code>
 
 ⚠️ <b>Reasons:</b>
-{chr(10).join('• ' + r for r in result['reasons'])}
+{chr(10).join('• ' + r for r in safe_reasons)}
 
 📊 Score: {result['spam_score']:.2f}
 🔧 Action: {result['action']}"""
@@ -626,15 +729,22 @@ I am a spam detection bot that protects Telegram groups from:
         
         # Send report to admins
         if self.admin_chat_id:
+            # Escape user-provided content
+            safe_reporter_name = html_escape(user_name)
+            safe_reporter_username = html_escape(username) if username else 'N/A'
+            safe_reported_name = html_escape(reported_user_name)
+            safe_reported_username = html_escape(reported_username) if reported_username else 'N/A'
+            safe_reported_text = html_escape(reported_text[:500])
+            
             report = f"""🚨 <b>User Report</b>
 
-👤 <b>Reporter:</b> {user_name} (@{username or 'N/A'})
+👤 <b>Reporter:</b> {safe_reporter_name} (@{safe_reporter_username})
 
-👤 <b>Reported User:</b> {reported_user_name} (@{reported_username or 'N/A'})
+👤 <b>Reported User:</b> {safe_reported_name} (@{safe_reported_username})
 🆔 User ID: <code>{reported_user_id}</code>
 
 📝 <b>Message:</b>
-<code>{reported_text[:500]}</code>
+<code>{safe_reported_text}</code>
 
 💬 Chat: <code>{chat_id}</code>
 📨 Message ID: <code>{reported_message_id}</code>
@@ -713,6 +823,19 @@ I am a spam detection bot that protects Telegram groups from:
             if result and self.config.ANALYTICS_ENABLED:
                 self.analytics.track_mute(chat_id)
             
+            # Security: Track mute event for anomaly detection
+            if result:
+                now = datetime.now(timezone.utc)
+                self.security_events['mutes_last_hour'].append(now)
+                # Prune old events
+                one_hour_ago = now - timedelta(hours=1)
+                self.security_events['mutes_last_hour'] = [
+                    t for t in self.security_events['mutes_last_hour'] if t > one_hour_ago
+                ]
+                # Alert if unusually high mute rate
+                if len(self.security_events['mutes_last_hour']) >= 20:
+                    logger.warning(f"🚨 SECURITY: High mute rate detected ({len(self.security_events['mutes_last_hour'])} mutes in last hour)")
+            
             return result
         except Exception as e:
             logger.error(f"Error muting user: {e}")
@@ -752,6 +875,10 @@ I am a spam detection bot that protects Telegram groups from:
             # Warn user and track warnings
             warnings = self.detector.add_warning(user_id)
             self.stats['users_warned'] += 1
+
+            # Track in analytics
+            if self.config.ANALYTICS_ENABLED:
+                self.analytics.track_warning(chat_id)
             
             # Track in reputation
             if self.config.REPUTATION_ENABLED:
@@ -777,16 +904,22 @@ I am a spam detection bot that protects Telegram groups from:
         
         # Report to admin
         if self.admin_chat_id:
+            # Escape user-provided content
+            safe_user_name = html_escape(user_name)
+            safe_username = html_escape(username) if username else 'N/A'
+            safe_text = html_escape(text[:300])
+            safe_bad_words = [html_escape(w) for w in bad_words[:5]]
+            
             report = f"""💬 <b>Bad Language Detected</b>
 
-👤 User: {user_name} (@{username or 'N/A'})
+👤 User: {safe_user_name} (@{safe_username})
 🆔 User ID: <code>{user_id}</code>
 💬 Chat: <code>{chat_id}</code>
 
 📝 <b>Message:</b>
-<code>{text[:300]}</code>
+<code>{safe_text}</code>
 
-🚫 <b>Words:</b> {', '.join(bad_words[:5])}"""
+🚫 <b>Words:</b> {', '.join(safe_bad_words)}"""
             await self._send_message(self.admin_chat_id, report)
     
     async def _verify_new_user(self, chat_id: int, user: Dict, join_time: datetime):
@@ -898,6 +1031,11 @@ I am a spam detection bot that protects Telegram groups from:
         if command == '/warn' and target_user_id:
             warnings = self.detector.add_warning(target_user_id)
             self.stats['users_warned'] += 1
+
+            # Track in analytics
+            if self.config.ANALYTICS_ENABLED:
+                self.analytics.track_warning(chat_id)
+            
             target_name = reply_to.get('from', {}).get('first_name', 'User')
             await self._send_message(
                 chat_id,
@@ -966,13 +1104,16 @@ I am a spam detection bot that protects Telegram groups from:
         
         # Parse timeframe from command
         parts = text.split()
-        timeframe = parts[1] if len(parts) > 1 else 'today'
+        # Parse timeframe from command
+        args = text.split()[1:]
+        query = " ".join(args).lower().strip()
         
         try:
-            if timeframe == 'today':
+            if not query or query == 'today':
                 stats = self.analytics.get_daily_stats()
                 report = self.analytics.format_report(stats)
-            elif timeframe in ['7d', 'week']:
+                
+            elif query in ['week', '7d']:
                 stats = self.analytics.get_range_stats(days=7)
                 report = self.analytics.format_report(stats)
                 # Add peak hours
@@ -981,27 +1122,61 @@ I am a spam detection bot that protects Telegram groups from:
                     report += "\n\n⏰ <b>Peak Hours (UTC)</b>"
                     for h in peak_hours[:3]:
                         report += f"\n   {h['hour_str']}: {h['messages']} msgs"
-            elif timeframe in ['30d', 'month']:
-                stats = self.analytics.get_range_stats(days=30)
+
+            elif query.endswith('d') and query[:-1].isdigit():
+                # Handle 30d, 90d, etc.
+                days = int(query[:-1])
+                stats = self.analytics.get_range_stats(days=days)
                 report = self.analytics.format_report(stats)
-            elif timeframe in ['14d', '2weeks']:
-                stats = self.analytics.get_range_stats(days=14)
-                report = self.analytics.format_report(stats)
-            else:
-                # Try parsing as number of days
+                
+            elif ' to ' in query:
+                # Handle range "from YYYY-MM-DD to YYYY-MM-DD"
+                clean_query = query.replace('from ', '')
+                start_str, end_str = clean_query.split(' to ')
+                
                 try:
-                    days = int(timeframe.replace('d', ''))
-                    stats = self.analytics.get_range_stats(days=days)
+                    start_date = datetime.strptime(start_str.strip(), "%Y-%m-%d")
+                    end_date = datetime.strptime(end_str.strip(), "%Y-%m-%d")
+                    
+                    # Ensure timezone awareness
+                    start_date = start_date.replace(tzinfo=timezone.utc)
+                    end_date = end_date.replace(tzinfo=timezone.utc)
+                    
+                    if start_date > end_date:
+                        await self._send_message(chat_id, "⚠️ Start date cannot be after end date.")
+                        return
+                        
+                    stats = self.analytics.get_stats_for_period(start_date, end_date)
                     report = self.analytics.format_report(stats)
                 except ValueError:
-                    report = """📊 <b>Analytics Usage</b>
+                     await self._send_message(
+                        chat_id,
+                        "⚠️ Invalid date format. Please use YYYY-MM-DD.\nExample: <code>/analytics 2023-01-01 to 2023-01-31</code>"
+                    )
+                     return
+
+            else:
+                # Try single date logic or existing fallback
+                try:
+                    # check if it's a date
+                    target_date = datetime.strptime(query, "%Y-%m-%d")
+                    date_key = target_date.strftime("%Y-%m-%d")
+                    stats = self.analytics.get_daily_stats(date_key)
+                    report = self.analytics.format_report(stats)
+                except ValueError:
+                    # Fallback to number of days if just a number provided/leftover handling
+                    try:
+                        timeframe = text.split()[1]
+                        days = int(timeframe.replace('d', ''))
+                        stats = self.analytics.get_range_stats(days=days)
+                        report = self.analytics.format_report(stats)
+                    except (ValueError, IndexError):
+                         report = """📊 <b>Analytics Usage</b>
 
 <code>/analytics</code> - Today's stats
-<code>/analytics 7d</code> - Last 7 days
-<code>/analytics 14d</code> - Last 14 days  
-<code>/analytics 30d</code> - Last 30 days
-<code>/analytics week</code> - Last 7 days
-<code>/analytics month</code> - Last 30 days"""
+<code>/analytics 7d</code>, <code>30d</code>, <code>90d</code> - Last X days
+<code>/analytics 2023-01-01</code> - Specific day
+<code>/analytics 2023-01-01 to 2023-01-31</code> - Custom range"""
             
             await self._send_message(chat_id, report, auto_delete=False)
             logger.info(f"Analytics report sent to admin {user_id}")
@@ -1039,15 +1214,21 @@ I am a spam detection bot that protects Telegram groups from:
         
         # Report to admin
         if self.admin_chat_id:
+            # Escape user-provided content
+            safe_user_name = html_escape(user_name)
+            safe_username = html_escape(username) if username else 'N/A'
+            safe_text = html_escape(text[:300])
+            safe_lang = html_escape(detected_lang)
+            
             report = f"""🚫 <b>Non-Indian Language Spam</b>
 
-👤 User: {user_name} (@{username or 'N/A'})
+👤 User: {safe_user_name} (@{safe_username})
 🆔 User ID: <code>{user_id}</code>
 💬 Chat: <code>{chat_id}</code>
-🌐 Language: {detected_lang}
+🌐 Language: {safe_lang}
 
 📝 <b>Message:</b>
-<code>{text[:300]}</code>
+<code>{safe_text}</code>
 
 🔨 <b>Action:</b> Banned immediately"""
             await self._send_message(self.admin_chat_id, report)
@@ -1067,6 +1248,25 @@ I am a spam detection bot that protects Telegram groups from:
             # Track in analytics
             if result and self.config.ANALYTICS_ENABLED:
                 self.analytics.track_ban(chat_id)
+            
+            # Security: Track ban event for anomaly detection
+            if result:
+                now = datetime.now(timezone.utc)
+                self.security_events['bans_last_hour'].append(now)
+                # Prune old events
+                one_hour_ago = now - timedelta(hours=1)
+                self.security_events['bans_last_hour'] = [
+                    t for t in self.security_events['bans_last_hour'] if t > one_hour_ago
+                ]
+                # Alert if unusually high ban rate
+                if len(self.security_events['bans_last_hour']) >= 10:
+                    logger.warning(f"🚨 SECURITY: High ban rate detected ({len(self.security_events['bans_last_hour'])} bans in last hour)")
+                    if self.admin_chat_id:
+                        await self._send_message(
+                            self.admin_chat_id,
+                            f"🚨 <b>Security Alert</b>\n\nHigh ban rate: {len(self.security_events['bans_last_hour'])} bans in the last hour. Potential attack or misconfiguration.",
+                            auto_delete=False
+                        )
             
             return result
         except Exception as e:
