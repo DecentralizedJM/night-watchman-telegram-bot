@@ -26,6 +26,14 @@ class Config:
         # Suspicious phrases (English)
         "send me", "invest with me", "trading signals",
         "binary options", "forex signals",
+        
+        # Gemini Bait: Keywords that might be safe but warrant AI inspection
+        # These give a low score (0.3) which triggers Gemini scan if enabled
+        "check bio", "link in bio", "bio link", "see bio",
+        "sniper bot", "mev bot", "front run bot", 
+        "win rate", "winning rate", "accuracy", 
+        "backtest", "strategies", "automated system",
+        "passive income", "steady income",
 
         # New scam patterns (Dec 2025)
         "trading account is thriving",
