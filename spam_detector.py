@@ -17,6 +17,12 @@ try:
 except ImportError:
     ML_ENABLED = False
 
+# Import Gemini Scanner (optional)
+try:
+    from gemini_scanner import get_gemini_scanner
+except ImportError:
+    pass
+
 logger = logging.getLogger(__name__)
 
 
@@ -76,6 +82,18 @@ class SpamDetector:
                 logger.info("🤖 ML spam classifier initialized")
             except Exception as e:
                 logger.error(f"Failed to initialize ML classifier: {e}")
+        
+        # Initialize Gemini Scanner
+        self.gemini_scanner = None
+        try:
+            from gemini_scanner import get_gemini_scanner
+            self.gemini_scanner = get_gemini_scanner()
+            if self.gemini_scanner.enabled:
+                logger.info("✨ Gemini AI scanner connected")
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.error(f"Failed to initialize Gemini scanner: {e}")
         
         # Track user message history for rate limiting
         self.user_messages: Dict[int, List[datetime]] = {}
@@ -172,7 +190,7 @@ class SpamDetector:
             r'[\U0001F1E0-\U0001F1FF]'   # Flags
         )
     
-    def analyze(self, message: str, user_id: int, user_join_date: Optional[datetime] = None,
+    async def analyze(self, message: str, user_id: int, user_join_date: Optional[datetime] = None,
                 entities: Optional[List] = None, user_rep: int = 0, 
                 is_first_message: bool = False) -> Dict:
         """
@@ -334,6 +352,55 @@ class SpamDetector:
                 result['reasons'].append(f"ML classifier: {ml_confidence:.0%} spam confidence")
                 result['details']['ml_confidence'] = ml_confidence
         
+        # Step 12: Gemini AI Analysis
+        # Use Gemini if enabled and score is suspicious but not definitive
+        current_score = result['spam_score']
+        
+        # Don't scan if already DEFINITELY spam (optimization)
+        if current_score < 0.9 and hasattr(self, 'gemini_scanner') and self.gemini_scanner and self.gemini_scanner.enabled:
+            should_scan = False
+            
+            # Case 1: Suspicious score range (checks for hidden spam that heuristic missed or confirmed allowed)
+            # We use a wider range for Gemini to help with false positives AND false negatives
+            if 0.25 <= current_score <= 0.85:
+                should_scan = True
+                
+            # Case 2: New user with potential spam indicators but low score (common bypass)
+            elif is_first_message and current_score > 0.1 and (entities or len(message) > 200):
+                should_scan = True
+                
+            if should_scan:
+                try:
+                    # Provide a timeout to ensure we don't hang the bot
+                    gemini_result = await self.gemini_scanner.scan_message(message)
+                    
+                    if gemini_result:
+                        gemini_score = gemini_result.get('confidence', 0.0)
+                        is_gemini_spam = gemini_result.get('is_spam', False)
+                        reason = gemini_result.get('reason', 'Gemini AI detection')
+                        
+                        if is_gemini_spam:
+                            logger.info(f"Gemini DETECTED SPAM: {reason} (Score: {gemini_score})")
+                            # Boost score - if Gemini is very sure, make it actionable
+                            new_score = max(result['spam_score'], gemini_score)
+                            
+                            # If Gemini is highly confident (>0.85), ensure we cross the delete threshold
+                            if gemini_score > 0.85:
+                                new_score = max(new_score, 0.8)
+                                
+                            result['spam_score'] = new_score
+                            result['reasons'].append(f"Gemini AI: {reason}")
+                        else:
+                            # Gemini thinks it's safe 
+                            # If heuristic was only mildly suspicious, authorize the message
+                            if current_score < 0.6:
+                                logger.info(f"Gemini cleared message: {reason}")
+                                # Reduce score to avoid flagging legitimate messages
+                                result['spam_score'] = min(result['spam_score'], 0.25)
+
+                except Exception as e:
+                    logger.error(f"Error during Gemini scan: {e}")
+
         # Determine if spam based on score
         if result['spam_score'] >= 0.7:
             result['is_spam'] = True

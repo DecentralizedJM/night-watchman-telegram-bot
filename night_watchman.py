@@ -633,7 +633,7 @@ class NightWatchman:
             if via_bot:
                 logger.info(f"🤖 Message via bot detected: {via_bot.get('username', 'unknown')} from {user_name}")
                 # Treat bot-shared content as potential spam - analyze it
-                bot_result = self.detector.analyze(text, user_id, None, entities)
+                bot_result = await self.detector.analyze(text, user_id, None, entities)
                 if bot_result.get('instant_ban'):
                     await self._delete_message(chat_id, message_id)
                     await self._handle_instant_ban(
@@ -665,7 +665,7 @@ class NightWatchman:
                     else:
                         # CRITICAL: Analyze forwarded message for spam BEFORE taking action
                         # This catches casino spam, bot links, porn, etc. in forwards
-                        forward_result = self.detector.analyze(text, user_id, None, entities)
+                        forward_result = await self.detector.analyze(text, user_id, None, entities)
                         
                         # If forwarded message contains instant-ban content, BAN immediately
                         if forward_result.get('instant_ban'):
@@ -824,7 +824,7 @@ class NightWatchman:
                     
                     # Check 3: Analyze caption for spam (if any)
                     if caption:
-                        caption_result = self.detector.analyze(caption, user_id, None, 
+                        caption_result = await self.detector.analyze(caption, user_id, None, 
                                                                 message.get('caption_entities', []))
                         if caption_result.get('instant_ban'):
                             await self._handle_instant_ban(
@@ -864,7 +864,7 @@ class NightWatchman:
                 is_first_message = user_rep_data.get('total_messages', 0) == 0
             
             # Analyze message for spam and bad language
-            result = self.detector.analyze(
+            result = await self.detector.analyze(
                 text, user_id, join_date, entities,
                 user_rep=user_rep, is_first_message=is_first_message
             )
