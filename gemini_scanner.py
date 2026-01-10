@@ -82,7 +82,7 @@ class GeminiScanner:
             
         return False
         
-    async def scan_message(self, text: str, user_context: str = "") -> Dict:
+    async def scan_message(self, text: str, user_context: str = "") -> Optional[Dict]:
         """
         Scan a message using Gemini.
         
@@ -92,19 +92,18 @@ class GeminiScanner:
             
         Returns:
             Dict with keys: is_spam (bool), confidence (float), reasoning (str)
+            OR None if scan was skipped (rate limit, error, disabled)
         """
-        default_result = {'is_spam': False, 'confidence': 0.0, 'reasoning': "Gemini unavailable/skipped"}
-        
         if not self.enabled or not self.model:
-            return default_result
+            return None
             
         if not text or len(text) < 10:
-            return default_result
+            return None
             
         # Check rate limit
         if not self._check_rate_limit():
             logger.warning("⏳ Gemini rate limit reached. Skipping scan.")
-            return {'is_spam': False, 'confidence': 0.0, 'reasoning': "Rate limited"}
+            return None
             
         try:
             # Construct prompt
@@ -163,7 +162,7 @@ Respond in JSON format ONLY:
             
         except Exception as e:
             logger.error(f"Gemini scan error: {e}")
-            return {'is_spam': False, 'confidence': 0.0, 'reasoning': f"Error: {str(e)}"}
+            return None
 
 # Global instance
 _gemini_scanner = None
