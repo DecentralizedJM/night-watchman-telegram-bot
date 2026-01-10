@@ -1,11 +1,46 @@
-# Night Watchman 🌙
+# Night Watchman 🌙🤖
 
-24/7 Telegram watchdog & moderation bot. Protects your groups from spam, scams, bad language, and more.
+**AI-Powered Telegram Superbot** — 24/7 intelligent watchdog with machine learning spam detection. Protects your groups from spam, scams, recruitment fraud, and more using ensemble ML classifiers.
+
+**Latest Release:** v1.2.0 (December 18, 2025) - 🤖 ML Superbot Upgrade
+- **NEW:** Ensemble Machine Learning classifier (3 AI models working together)
+- **NEW:** Naive Bayes + Logistic Regression + Random Forest voting
+- **NEW:** Self-learning from admin actions - gets smarter over time
+- **NEW:** Monthly community satisfaction polls with scammer tracking
+- **IMPROVED:** Forex/trading scam detection with flexible pattern matching
+- **IMPROVED:** Recruitment scam detection with weighted scoring system
+
+**Previous Release:** v1.1.4 (December 11, 2025) - � Bug Fixes & Memory Management
+- **NEW RULE:** Messages with hyperlinked text (text_link) + more than 2 emojis = instant ban
+- Catches disguised spam links hidden behind pretty emoji-laden text
+- Improved emoji detection pattern for better coverage
+
+**Previous Release:** v1.1.2 (December 10, 2025) - 📤 Forwarded Spam Detection Fix
+- **CRITICAL FIX:** Forwarded messages now analyzed for spam content before taking action
+- Forwarded casino/bot spam now triggers instant ban (not just mute)
+- Added new instant-ban keywords: "winning streak", "top prize", "telegram bonus", etc.
+
+**Previous Release:** v1.1.1 (December 9, 2025) - 🛡️ Aggressive Anti-Spam Overhaul
+- Fixed all 6 reported scammer detection failures
+- Cyrillic character deobfuscation for porn spam
+- Instant-ban system for zero-tolerance violations
+- Forward violation tracking with escalating penalties
+- Bot account blocking
+- Cool sassy ban message templates
 
 ## Features
 
+### 🤖 AI/ML Spam Detection (NEW!)
+- **Ensemble Machine Learning** - 3 classifiers vote on each message
+- **Naive Bayes** - Fast probabilistic text classification
+- **Logistic Regression** - Linear pattern detection
+- **Random Forest** - Non-linear scam variant capture
+- **Self-learning** - Improves from admin bans automatically
+- **TF-IDF vectorization** - Understands word importance and n-grams
+
 ### 🛡️ Core Protection
 - **Real-time spam detection** using multiple signals
+- **CAS integration** - checks users against Combot Anti-Spam database (1M+ groups)
 - **Bad language detection** - automatically detects and warns about profanity
 - **Scammer detection** - identifies suspicious accounts on join
 - **Anti-raid protection** - detects coordinated attacks
@@ -41,6 +76,81 @@
 - `/report` - Report a message (reply to message)
 - `/rep` - Check your reputation
 - `/leaderboard` - Top 10 users by reputation
+
+## 🚀 Recent Updates (v1.2.0)
+
+### 🤖 ML Superbot Upgrade
+Night Watchman now uses **Ensemble Machine Learning** for spam detection:
+
+**3-Classifier Voting System:**
+| Classifier | Strength |
+|------------|----------|
+| **Naive Bayes** | Fast probabilistic baseline, excellent for text |
+| **Logistic Regression** | Clear linear decision boundaries |
+| **Random Forest** | Catches complex non-linear patterns |
+
+- Uses **soft voting** - averages probability scores from all 3 models
+- More robust than any single classifier alone
+- Reduced false positives on legitimate messages
+- Better detection of new scam variants
+
+**Self-Learning:**
+- When admins ban spammers, the message is added to training data
+- Model retrains automatically every 10 new samples
+- Gets smarter the more you use it!
+
+**New Scam Detection:**
+- Forex/trading scam patterns with flexible regex
+- Recruitment scam scoring system (telegram handles, DM requests, earnings claims)
+- Monthly community polls showing scammer takedown stats
+
+### 📊 Stats Command Update
+`/stats` now shows ML classifier status:
+```
+🤖 ML Classifier: Active
+🧠 Model: Ensemble (NB + LR + RF)
+📚 Training: 45 spam, 30 ham
+```
+
+## Previous Updates (v1.1.4)
+  - `message_authors` - capped at 5,000 entries
+  - `enhanced_messages` - capped at 2,000 entries
+  - `report_cooldowns` - expired entries removed
+  - `media_timestamps` - entries older than 1 hour removed
+  - `member_join_dates` - entries older than 7 days removed
+
+### 🧪 Testing Improvements
+- Restructured tests into `tests/` directory
+- Added pytest-compatible test functions
+- Run tests with: `python tests/test_spam_detection.py`
+
+## Previous Updates (v1.1.3)
+
+### � Hyperlink + Emoji Detection
+**Problem:** Spammers were hiding malicious links behind pretty emoji-laden text.
+
+**Fix:** Messages with hyperlinked text (text_link entity) + more than 2 emojis now trigger instant ban.
+
+## Previous Updates (v1.1.2)
+
+### 🎯 Fixed All 6 Scammer Detection Failures
+1. **Cyrillic-obfuscated porn** - Deobfuscates Cyrillic lookalikes (х→x, р→p, о→o)
+2. **Aggressive DM solicitation** - Detects "DM me now", "inbox me"
+3. **Emoji-obfuscated links** - Flags excessive emojis + bot links
+4. **Bot account joins** - Blocks accounts by is_bot flag + username patterns
+5. **Casino/betting promo** - Instant bans on 1win, casino keywords
+6. **Forwarded spam** - Mutes on first, bans on repeat
+
+### 💥 Instant-Ban System
+Zero-tolerance violations trigger immediate permanent ban:
+- Adult/porn content (normalized for obfuscation)
+- Telegram bot links (t.me/botname)
+- DM solicitation phrases
+- Casino & betting scams
+- Excessive emoji spam combinations
+
+### 🎭 Cool Ban Messages
+Bot now responds with entertaining ban notifications across 8 categories with sassy responses.
 
 ## Detection Signals
 
@@ -84,13 +194,15 @@ python3 night_watchman.py
 | `/start` | Welcome message |
 | `/stats` | Show bot statistics |
 
-### Admin Commands (In Group - Reply to User)
+### Admin Commands (In Group - Reply, @username, or User ID)
 | Command | Description |
 |---------|-------------|
-| `/warn` | Warn a user (reply to their message) |
+| `/warn` | Warn a user (reply, `/warn @user`, or `/warn <id>`) |
 | `/ban` | Ban a user permanently |
 | `/mute` | Mute a user for 24 hours |
 | `/unwarn` | Clear warnings for a user |
+| `/enhance` | Award +15 reputation points (reply to message) |
+| `/cas` | Check user against CAS anti-spam database |
 | `/stats` | Show detailed bot statistics |
 
 ### Analytics Commands (Admin Only - Private)
@@ -103,12 +215,13 @@ python3 night_watchman.py
 | `/analytics week` | Same as 7d |
 | `/analytics month` | Same as 30d |
 
-> **Note:** Analytics commands can be used in the group (command is deleted, results sent via DM) or in private chat with the bot.
+> **Note:** Analytics commands can be used by any group admin (command is deleted, results sent via DM) or in private chat with the bot.
 
 ## Analytics Features
 
 📊 **What's tracked:**
-- 👥 Member joins/exits per day
+- 🆕 New Active Members (first-time message senders)
+- 👤 Total Known Users (all users who ever messaged)
 - 💬 Total messages per day
 - 🚫 Spam blocked per day
 - 🤬 Bad language detected
@@ -119,11 +232,14 @@ python3 night_watchman.py
 - 👤 Active users per day
 - ⏰ Peak activity hours
 
+> **Note:** For groups with hidden member lists, Telegram doesn't send join/exit notifications. Instead, we track "New Active Members" - users who send their first message.
+
 ## Required Bot Permissions
 
 The bot needs these admin permissions in the group:
 - Delete messages
 - Restrict members (for muting)
+- Add members (to receive member join/leave events)
 
 ## Auto-Moderation Actions
 
@@ -154,19 +270,24 @@ The bot needs these admin permissions in the group:
 ### Earning Points
 | Action | Points |
 |--------|--------|
-| Daily activity | +1 |
+| Daily activity | +5 |
 | Valid spam report | +10 |
+| 7-day streak bonus | +5 |
+| 30-day streak bonus | +10 |
+| Admin enhancement (`/enhance`) | +15 |
 | Warning received | -10 |
 | Muted | -25 |
 | Unmuted (false positive) | +15 |
 
-### Levels
-| Level | Points | Perks |
-|-------|--------|-------|
-| 🆕 Newcomer | 0-50 | Standard restrictions |
-| 🌟 Member | 51-200 | Can post links |
-| ⭐ Trusted | 201-500 | Bypass some restrictions |
-| 💎 VIP | 501+ | Can forward messages |
+### Levels (Display Only)
+| Level | Points | Description |
+|-------|--------|-------------|
+| 🆕 Newcomer | 0-50 | New to the community |
+| 🌟 Member | 51-200 | Active participant |
+| ⭐ Trusted | 201-500 | Regular contributor |
+| 💎 VIP | 501+ | Top community member |
+
+> **Note:** Levels are for display/recognition only. All moderation rules apply equally to everyone except admins.
 
 ---
 

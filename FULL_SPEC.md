@@ -18,6 +18,19 @@
   - Whitelists trusted domains (mudrex.com, binance.com, github.com, etc.)
   - Detects external Telegram links (t.me, telegram.me)
   
+- **Mention Spam Detection**: ⭐ NEW
+  - Detects repeated @mentions with promotional content
+  - Pattern: "@channel @channel @channel" + "Join now" + link
+  - Scoring:
+    * 5+ mentions: 0.7 spam score (high confidence)
+    * 3-4 mentions + promotional keywords: 0.6 spam score
+    * 2+ duplicate mentions: flagged as spam
+  - Catches bot spam like:
+    ```
+    @trading @profits @crypto
+    Join now at [link]
+    ```
+
 - **Crypto Address Detection**: Flags wallet addresses (ETH, BTC, SOL)
 - **Duplicate Message Detection**: Catches repeated spam messages
 - **Formatting Abuse**: Detects excessive CAPS, repeated characters, too many emojis
@@ -29,8 +42,11 @@
 - Score ≥ 0.3 → Flag for review
 - Score < 0.3 → Allow
 
-### 2. Bad Language Detection
-- **Profanity Filter**: Detects inappropriate words
+### 2. Bad Language Detection (English + Hindi/Hinglish)
+- **Profanity Filter**: Detects inappropriate words in multiple languages
+  - **English profanity**: fuck, shit, bitch, etc.
+  - **Hindi/Hinglish abuse**: madarchod, bhenchod, chutiya, gaandu, etc.
+  - **Romanized variations**: mc, bc, bkl, etc.
 - **Configurable Actions**:
   - `warn` - Warn user only
   - `delete` - Delete message only
@@ -38,13 +54,21 @@
   - `mute` - Direct mute
 - **Auto-escalation**: After warnings, mutes/bans apply
 
-### 3. Non-Indian Language Detection & Auto-Ban
-- **Detects Languages**: Chinese, Korean, Russian, Japanese, Arabic, Thai, Vietnamese
-- **Immediate Ban**: Users posting suspicious links in non-Indian languages are banned instantly
-- **Message Deletion**: Messages deleted before ban
-- **Admin Notification**: Reports sent to admin chat
+### 3. Hindi/Hinglish Spam Detection
+- **Detects Hindi spam patterns**: "dm karo", "paisa kamao", "lakho kamao"
+- **Crypto scams in Hinglish**: "free crypto milega", "airdrop milega"
+- **Action phrases**: "whatsapp karo", "link pe click", "jaldi grab karo"
+- **All Indian languages allowed**: Hindi (Devanagari), Tamil, Telugu, Bengali, etc.
 
-### 4. Scammer Detection on Join
+### 4. Non-Indian Language Detection & Auto-Delete/Ban
+- **Detects Languages**: Chinese, Korean, Russian, Japanese, Arabic, Thai, Vietnamese
+- **Allows All Indian Languages**: Hindi, Tamil, Telugu, Bengali, Gujarati, etc.
+- **Always Deletes**: All messages in non-Indian languages are immediately deleted
+- **Immediate Ban**: Users posting links/URLs in non-Indian languages are banned instantly
+- **Warning Only**: Messages without links trigger deletion and warning (no ban)
+- **Admin Notification**: Reports sent to admin chat for all foreign language detections
+
+### 5. Scammer Detection on Join
 - **Suspicious Username Patterns**:
   - Only numbers (12345)
   - Generic patterns (user123, telegram123)
@@ -52,13 +76,35 @@
 - **Missing Profile Info**: Flags accounts with no username/name
 - **Auto-Actions**: Can auto-ban or restrict suspicious accounts
 - **New User Restrictions**: Blocks links/media for first 24 hours
+- **Bot Account Blocking**: Auto-bans bot accounts that try to join
 
 ### 5. Anti-Raid Protection
 - **Raid Detection**: Detects when 10+ users join within 5 minutes
 - **Admin Alerts**: Notifies admins of potential coordinated attacks
 - **Configurable Thresholds**: Adjustable window and user count
 
-### 6. Flood Detection
+### 6. CAS (Combot Anti-Spam) Integration
+- **Global Spam Database**: Checks new members against CAS database
+- **Auto-Ban Known Spammers**: Instantly bans users flagged across 1M+ groups
+- **Manual Checks**: `/cas @user` command to check any user
+- **Admin Notifications**: Reports when CAS-banned users try to join
+- **API**: Uses free public CAS API (api.cas.chat)
+
+### 7. Instant Ban Detection
+- **Adult/Porn Content**: Detects obfuscated patterns (p-o-r-n, x x x, etc.)
+- **Casino/Betting Spam**: Detects promo codes, 1win, jackpot, etc.
+- **DM Solicitation**: Flags "DM me now", "inbox me", Hindi variants
+- **Telegram Bot Links**: Auto-bans promotion of scam bots
+- **Emoji Obfuscation**: Detects spam hidden behind emoji walls
+- **Zero Tolerance**: These violations result in immediate ban, no warnings
+
+### 8. Forward Message Control
+- **Instant Mute**: First forward violation = 24h mute (not just warning)
+- **Ban on Repeat**: Second forward = permanent ban
+- **VIP Exception**: VIP reputation users can forward
+- **Admin Exception**: Admins can always forward
+
+### 9. Flood Detection
 - **Message Rate Limiting**: Flags users sending too many messages
 - **Duplicate Detection**: Catches spam floods with same message
 - **Automatic Action**: Warns/mutes based on severity
@@ -103,14 +149,18 @@
 
 ## 🔧 Admin Commands
 
-### In-Group Commands (Reply to User)
+### In-Group Commands (Reply to User, @username, or User ID)
 | Command | Description | Usage |
 |---------|-------------|-------|
-| `/warn` | Warn a user | Reply to their message with `/warn` |
-| `/ban` | Ban user permanently | Reply with `/ban` |
-| `/mute` | Mute user for 24h | Reply with `/mute` |
-| `/unwarn` | Clear user warnings | Reply with `/unwarn` |
+| `/warn` | Warn a user | Reply to message, `/warn @username`, or `/warn <user_id>` |
+| `/ban` | Ban user permanently | Reply, `/ban @username`, or `/ban <user_id>` |
+| `/mute` | Mute user for 24h | Reply, `/mute @username`, or `/mute <user_id>` |
+| `/unwarn` | Clear user warnings | Reply, `/unwarn @username`, or `/unwarn <user_id>` |
+| `/cas` | Check user against CAS database | Reply, `/cas @username`, or `/cas <user_id>` |
+| `/enhance` | Award +15 reputation points | Reply with `/enhance` (auto-deletes in 1 min) |
 | `/stats` | Show bot statistics | Use `/stats` in group |
+
+> **Note**: When using `@username`, the user must be mentioned (Telegram will auto-complete). User ID can be found in bot notifications when a user is warned/muted. Useful when the original message was deleted.
 
 ### Private Chat Commands
 | Command | Description |
@@ -132,8 +182,8 @@
 
 ### Tracked Metrics
 - **Member Activity**:
-  - Joins per day
-  - Exits per day
+  - New Active Members (first-time message senders)
+  - Total Known Users (all users who ever messaged)
   - Active users per day
   
 - **Message Activity**:
@@ -153,6 +203,8 @@
   - Daily trends
   - Weekly/monthly summaries
 
+> **Note**: For groups with hidden member lists, Telegram doesn't send join/exit notifications to bots. Instead, we track "New Active Members" - users who send their first message in the group. This is more useful as it tracks engaged members, not just people who joined and lurked.
+
 ### Data Storage
 - **File**: `data/analytics.json`
 - **Retention**: 90 days (configurable)
@@ -162,7 +214,7 @@
 - **Timeframe Options**: today, 7d, 14d, 30d, week, month
 - **Peak Hours**: Shows top 3 busiest hours for weekly reports
 - **Private Delivery**: Results sent via DM (command deleted from group)
-- **Admin Only**: Restricted to users in `ADMIN_USER_IDS`
+- **All Admins**: Any group admin can use `/analytics` (not just ADMIN_USER_IDS)
 
 ---
 
@@ -187,7 +239,9 @@ Sent to `ADMIN_CHAT_ID` when spam is detected:
 - User details
 - Detected language
 - Message content
-- Immediate ban notification
+- Action taken:
+  - With links: Immediate ban
+  - Without links: Delete and warn only
 
 ### Raid Alerts
 - Chat ID
@@ -199,6 +253,128 @@ Sent to `ADMIN_CHAT_ID` when spam is detected:
 - User details
 - Suspicious patterns detected
 - Action taken (ban/restrict)
+
+### User Reports
+- Reporter information
+- Reported user details
+- Reported message content
+- Chat and message ID for action
+
+---
+
+## ⭐ Reputation System
+
+### Points System (No Perks - Campaign Ready)
+Points track engagement and can be used for campaigns/rewards. **No restrictions based on reputation.**
+
+| Action | Points | Direction |
+|--------|--------|-----------|
+| Daily activity | +5 | Positive |
+| Valid spam report | +10 | Positive |
+| 7-day active streak bonus | +5 | Positive |
+| 30-day active streak bonus | +10 | Positive |
+| Admin enhancement (`/enhance`) | +15 | Positive |
+| Warning received | -10 | Negative |
+| Muted | -25 | Negative |
+| Unmuted (false positive) | +15 | Positive |
+
+**Admin Enhancement:**
+- Admins use `/enhance` command by replying to quality messages (+15 points)
+- Command and confirmation auto-delete after 1 minute (keeps chat clean)
+- Admins are excluded from earning reputation points
+- Cannot enhance other admins
+
+### Reputation Levels (Display Only)
+| Level | Points | Emoji |
+|-------|--------|-------|
+| Newcomer | 0-50 | 🆕 |
+| Member | 51-200 | 🌟 |
+| Trusted | 201-500 | ⭐ |
+| VIP | 501+ | 💎 |
+
+**Note:** Levels are for display only. No perks or restrictions are applied.
+
+### Commands
+- `/rep` - Check your reputation and level
+- `/leaderboard` - All-time top 10 users
+- `/leaderboard 7` - Top users from last 7 days
+- `/leaderboard 30` - Top users from last 30 days
+
+### Data Storage
+- **File**: `data/reputation.json`
+- **Tracked**: Points, daily points, warnings, valid reports, join date, last active
+
+---
+
+## 💬 User Commands
+
+| Command | Description | Available To |
+|---------|-------------|--------------|
+| `/guidelines` | Show community rules | Everyone |
+| `/help` | List all commands | Everyone |
+| `/admins` | Tag all group admins | Everyone |
+| `/report` | Report spam (reply to message) | Everyone |
+| `/rep` | Check your reputation | Everyone |
+| `/leaderboard` | All-time top 10 users | Everyone |
+| `/leaderboard N` | Top users from last N days | Everyone |
+
+---
+
+## ↩️ Forward Detection
+
+### How It Works
+- **Blocks all forwarded messages** by default
+- Detects: `forward_from`, `forward_from_chat`, `forward_date`
+- **Only admins can forward** (configurable)
+
+### Configuration
+```python
+BLOCK_FORWARDS = True
+FORWARD_ALLOW_ADMINS = True
+# No VIP bypass - forwards blocked for everyone except admins
+```
+
+---
+
+## 📛 Username Requirement
+
+### How It Works
+1. User joins without Telegram username
+2. Bot immediately mutes user
+3. Warning message with instructions sent
+4. 24-hour grace period to set username
+5. User kicked if no username after grace period
+
+### Configuration
+```python
+REQUIRE_USERNAME = True
+USERNAME_GRACE_PERIOD_HOURS = 24
+USERNAME_WARNING_MESSAGE = "..."  # Customizable
+```
+
+---
+
+## 🚨 Report System
+
+### How It Works
+1. User replies to suspicious message with `/report`
+2. Report command is deleted (keeps chat clean)
+3. Report sent to admin chat with:
+   - Reporter info
+   - Reported user info
+   - Message content
+   - Chat/message IDs for action
+4. Reporter gets confirmation
+
+### Anti-Abuse
+- **Cooldown**: 60 seconds between reports per user
+- **Valid reports**: Earn +10 reputation points
+
+### Configuration
+```python
+REPORT_ENABLED = True
+REPORT_COOLDOWN_SECONDS = 60
+```
 
 ---
 
@@ -291,14 +467,17 @@ WELCOME_MESSAGE = "..."  # Customizable
 
 ```
 night-watchman-telegram-bot/
-├── night_watchman.py      # Main bot file
+├── night_watchman.py      # Main bot file (1100+ lines)
 ├── spam_detector.py       # Spam detection engine
 ├── analytics_tracker.py   # Analytics tracking system
+├── reputation_tracker.py  # Reputation system (NEW)
 ├── config.py             # Configuration settings
 ├── requirements.txt       # Python dependencies
 ├── README.md             # User documentation
+├── FULL_SPEC.md          # This specification
 ├── data/
-│   └── analytics.json    # Analytics data (auto-created)
+│   ├── analytics.json    # Analytics data (auto-created)
+│   └── reputation.json   # Reputation data (auto-created)
 └── logs/
     └── night_watchman.log # Bot logs (auto-created)
 ```
@@ -387,7 +566,8 @@ ADMIN_USER_IDS=123456789,987654321  # Optional, comma-separated
 ## ✅ Feature Checklist
 
 - ✅ Real-time spam detection
-- ✅ Bad language detection
+- ✅ **Hindi/Hinglish spam detection**
+- ✅ Bad language detection (English + Hindi)
 - ✅ Non-Indian language blocking
 - ✅ Scammer detection on join
 - ✅ Anti-raid protection
@@ -404,6 +584,12 @@ ADMIN_USER_IDS=123456789,987654321  # Optional, comma-separated
 - ✅ URL filtering
 - ✅ Peak hours analysis
 - ✅ 90-day data retention
+- ✅ **Reputation System** (points only, no perks)
+- ✅ **Date-based Leaderboards** (/leaderboard N for last N days)
+- ✅ **User Commands** (/guidelines, /help, /admins, /report, /rep, /leaderboard)
+- ✅ **Forward Detection** (admins only)
+- ✅ **Username Requirement** (mute on join, grace period)
+- ✅ **Report System** (user reports to admins)
 
 ---
 

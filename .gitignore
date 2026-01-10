@@ -3,5 +3,12 @@
 __pycache__/
 *.pyc
 logs/
+data/
 .DS_Store
 *.log
+
+# Test artifacts
+.pytest_cache/
+htmlcov/
+.coverage
+# Updated: 2025-12-16

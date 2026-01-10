@@ -80,6 +80,7 @@ class AnalyticsTracker:
             self.data['daily'][date_key] = {
                 'joins': 0,
                 'exits': 0,
+                'new_active_members': 0,  # First-time message senders
                 'messages': 0,
                 'spam_blocked': 0,
                 'bad_language': 0,
@@ -87,6 +88,7 @@ class AnalyticsTracker:
                 'mutes': 0,
                 'bans': 0,
                 'active_users': [],
+                'all_time_users': [],  # Track all users ever seen
                 'raid_alerts': 0
             }
     
@@ -122,11 +124,23 @@ class AnalyticsTracker:
         self._ensure_day(today)
         self._ensure_hour(hour)
         
+        # Ensure all_time_users exists in data root
+        if 'all_time_users' not in self.data:
+            self.data['all_time_users'] = []
+        
+        # Check if this is a NEW active member (first time ever messaging)
+        if user_id not in self.data['all_time_users']:
+            self.data['all_time_users'].append(user_id)
+            # Ensure new_active_members field exists
+            if 'new_active_members' not in self.data['daily'][today]:
+                self.data['daily'][today]['new_active_members'] = 0
+            self.data['daily'][today]['new_active_members'] += 1
+        
         # Increment message count
         self.data['daily'][today]['messages'] += 1
         self.data['hourly'][hour]['messages'] += 1
         
-        # Track active users (unique)
+        # Track active users (unique per day)
         if user_id not in self.data['daily'][today]['active_users']:
             self.data['daily'][today]['active_users'].append(user_id)
         if user_id not in self.data['hourly'][hour]['active_users']:
@@ -191,6 +205,7 @@ class AnalyticsTracker:
             'joins': day_data.get('joins', 0),
             'exits': day_data.get('exits', 0),
             'net_members': day_data.get('joins', 0) - day_data.get('exits', 0),
+            'new_active_members': day_data.get('new_active_members', 0),
             'messages': day_data.get('messages', 0),
             'spam_blocked': day_data.get('spam_blocked', 0),
             'bad_language': day_data.get('bad_language', 0),
@@ -267,6 +282,7 @@ class AnalyticsTracker:
             'joins': 0,
             'exits': 0,
             'net_members': 0,
+            'new_active_members': 0,
             'messages': 0,
             'spam_blocked': 0,
             'bad_language': 0,
@@ -285,6 +301,7 @@ class AnalyticsTracker:
             
             totals['joins'] += day_stats['joins']
             totals['exits'] += day_stats['exits']
+            totals['new_active_members'] += day_stats.get('new_active_members', 0)
             totals['messages'] += day_stats['messages']
             totals['spam_blocked'] += day_stats['spam_blocked']
             totals['bad_language'] += day_stats['bad_language']
@@ -330,8 +347,22 @@ class AnalyticsTracker:
             for h, c in sorted_hours[:5]
         ]
     
-    def format_report(self, stats: Dict, include_breakdown: bool = False) -> str:
+    def format_report(self, stats: Dict, include_breakdown: bool = False, include_peak_hours: bool = True) -> str:
         """Format stats into a readable message"""
+        # Get new active members count
+        new_active = stats.get('new_active_members', 0)
+        total_known_users = len(self.data.get('all_time_users', []))
+        
+        # Get peak hours
+        peak_hours_text = ""
+        if include_peak_hours:
+            peak_hours = self.get_peak_hours(days=7)
+            if peak_hours:
+                peak_hours_text = "\n\n⏰ <b>Peak Activity Hours (7d)</b>\n"
+                for i, ph in enumerate(peak_hours[:3], 1):
+                    bar = "█" * min(10, max(1, ph['messages'] // 50))
+                    peak_hours_text += f"   {i}. {ph['hour_str']} - {ph['messages']:,} msgs {bar}\n"
+        
         if 'period' in stats:
             # Range report
             
@@ -345,9 +376,8 @@ class AnalyticsTracker:
 <i>{stats['start_date']} to {stats['end_date']}</i>
 
 👥 <b>Members</b>
-   ➕ Joined: {stats['joins']}
-   ➖ Left: {stats['exits']}
-   📈 Net change: {stats['net_members']:+d}
+   🆕 New Active: {new_active}
+   📋 Total Known: {total_known_users:,}
 
 💬 <b>Activity</b>
    📨 Messages: {stats['messages']:,}
@@ -380,9 +410,8 @@ class AnalyticsTracker:
 <i>{stats['date']}</i>
 
 👥 <b>Members</b>
-   ➕ Joined: {stats['joins']}
-   ➖ Left: {stats['exits']}
-   📈 Net change: {stats['net_members']:+d}
+   🆕 New Active: {new_active}
+   📋 Total Known: {total_known_users:,}
 
 💬 <b>Activity</b>
    📨 Messages: {stats['messages']:,}
@@ -398,6 +427,9 @@ class AnalyticsTracker:
 📈 <b>Lifetime Totals</b>
    🔇 Mutes: {self._BASE_MUTES + current_mutes}+
    🔨 Bans: {self._BASE_BANS + current_bans}+"""
+        
+        # Add peak hours to report
+        report += peak_hours_text
         
         return report
     
