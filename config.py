@@ -175,6 +175,7 @@ class Config:
     # Whitelisted domains (always allowed)
     WHITELISTED_DOMAINS = [
         "mudrex.com",
+        "mudrex.go.link",
         "coingecko.com",
         "coinmarketcap.com",
         "tradingview.com",

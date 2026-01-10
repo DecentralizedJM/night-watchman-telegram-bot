@@ -1229,11 +1229,14 @@ class NightWatchman:
         logger.warning(f"🚨 SPAM detected from {user_name} (@{username}): {result['reasons']}")
         
         # Delete the message
+        deleted = False
         if self.config.AUTO_DELETE_SPAM:
             deleted = await self._delete_message(chat_id, message_id)
             if deleted:
                 self.stats['messages_deleted'] += 1
                 logger.info(f"🗑️ Deleted spam message from {user_name}")
+            else:
+                logger.warning(f"❌ Could not delete spam message from {user_name}")
         
         # Warn the user (for all spam detections, not just delete_and_warn)
         if self.config.AUTO_WARN_USER and result['is_spam']:
@@ -1279,9 +1282,10 @@ class NightWatchman:
             else:
                 # Send warning
                 remaining = self.config.AUTO_MUTE_AFTER_WARNINGS - warnings
+                action_text = "removed" if deleted else "flagged"
                 await self._send_message(
                     chat_id,
-                    f"⚠️ <b>{user_name}</b>, your message was removed for spam. "
+                    f"⚠️ <b>{user_name}</b>, your message was {action_text} for spam. "
                     f"Warning {warnings}/{self.config.AUTO_MUTE_AFTER_WARNINGS}."
                 )
         
@@ -1814,7 +1818,10 @@ I am a spam detection bot that protects Telegram groups from:
             url = f"https://api.telegram.org/bot{self.token}/deleteMessage"
             data = {'chat_id': chat_id, 'message_id': message_id}
             response = await self.client.post(url, json=data, timeout=10.0)
-            return response.json().get('ok', False)
+            result = response.json()
+            if not result.get('ok'):
+                logger.error(f"Failed to delete message {message_id} in {chat_id}: {result.get('description')}")
+            return result.get('ok', False)
         except Exception as e:
             logger.error(f"Error deleting message: {e}")
         return False
