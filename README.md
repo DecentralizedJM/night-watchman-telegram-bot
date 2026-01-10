@@ -1,8 +1,16 @@
 # Night Watchman 🌙🤖
 
-**AI-Powered Telegram Superbot** — 24/7 intelligent watchdog with machine learning spam detection. Protects your groups from spam, scams, recruitment fraud, and more using ensemble ML classifiers.
+**AI-Powered Telegram Superbot** — 24/7 intelligent watchdog with hybrid AI/ML spam detection. Protects your groups from spam, scams, recruitment fraud, and more using advanced Deep Learning + Ensemble ML classifiers.
 
-**Latest Release:** v1.2.0 (December 18, 2025) - 🤖 ML Superbot Upgrade
+**Latest Release:** v1.3.0 (January 10, 2026) - 🧠 Advanced AI Hybrid Engine
+- **NEW:** Hybrid AI Engine (TF-IDF + Semantic Embeddings)
+- **NEW:** "Brain" Upgrade - understands sentence meaning, not just keywords
+- **NEW:** Character N-gram analysis - detects "leetspeak" obfuscation (e.g. `P.r.0.f.i.t`)
+- **NEW:** Gradient Boosting Classifier - detects complex non-linear scam patterns
+- **NEW:** Heuristic Meta-Features - Analyzes emoji density, caps ratio, link counts
+- **NEW:** Automatic Fallback - Gracefully degrades if heavy AI libraries can't load
+
+**Previous Release:** v1.2.0 (December 18, 2025) - 🤖 ML Superbot Upgrade
 - **NEW:** Ensemble Machine Learning classifier (3 AI models working together)
 - **NEW:** Naive Bayes + Logistic Regression + Random Forest voting
 - **NEW:** Self-learning from admin actions - gets smarter over time
@@ -30,7 +38,14 @@
 
 ## Features
 
-### 🤖 AI/ML Spam Detection (NEW!)
+### � Advanced Hybrid AI (v1.3.0)
+- **Deep Semantic Analysis** - Uses `sentence-transformers` to detect spam by meaning/intent
+- **Gradient Boosting** - XGBoost-style algorithm for complex pattern recognition
+- **Anti-Obfuscation** - Character N-grams catch `P.r.0.f.i.t`, `1nv3stment`
+- **Meta-Features** - Smart analysis of message structure (Caps, Emojis/$, Links)
+- **Fault Tolerant** - Auto-fallback to lightweight models if server load is high
+
+### 🤖 ML Spam Detection (Standard)
 - **Ensemble Machine Learning** - 3 classifiers vote on each message
 - **Naive Bayes** - Fast probabilistic text classification
 - **Logistic Regression** - Linear pattern detection
