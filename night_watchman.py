@@ -1283,10 +1283,20 @@ class NightWatchman:
                 # Send warning
                 remaining = self.config.AUTO_MUTE_AFTER_WARNINGS - warnings
                 action_text = "removed" if deleted else "flagged"
+
+                # Check if we should append the generic safety tip (for scam/Gemini detections)
+                show_safety_tip = False
+                for r in result.get('reasons', []):
+                    if "Gemini" in r or "scam" in r.lower() or "bait" in r.lower():
+                        show_safety_tip = True
+                        break
+                
+                safety_msg = self.config.SAFETY_TIP_MESSAGE if show_safety_tip else ""
+
                 await self._send_message(
                     chat_id,
                     f"⚠️ <b>{user_name}</b>, your message was {action_text} for spam. "
-                    f"Warning {warnings}/{self.config.AUTO_MUTE_AFTER_WARNINGS}."
+                    f"Warning {warnings}/{self.config.AUTO_MUTE_AFTER_WARNINGS}.{safety_msg}"
                 )
         
         # Report to admin

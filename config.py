@@ -565,6 +565,14 @@ Muted: -25 points
 Unmuted (false positive): +15 points
 
 <i>Powered by Mudrex</i>"""
+
+    # Safety Tip Message (shown when scammy spam is detected)
+    SAFETY_TIP_MESSAGE = """
+🛡 <b>Safety Warning:</b>
+• Never share OTPs, passwords, or private keys.
+• Do not connect your wallet to unknown sites.
+• Unbelievable profits = Scams. Always DYOR.
+• Be careful interacting with strangers in DMs."""
     
     # Reputation System (Points only - no perks/restrictions)
     # Points are for tracking engagement and can be used for campaigns
