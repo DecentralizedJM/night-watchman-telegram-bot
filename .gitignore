@@ -12,3 +12,5 @@ data/
 htmlcov/
 .coverage
 # Updated: 2025-12-16
+send_announcement.py
+
