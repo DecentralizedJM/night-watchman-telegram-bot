@@ -96,7 +96,7 @@ The bot now catches **ANY variant** automatically:
 
 ## Features
 
-### � Advanced Hybrid AI (v1.3.0)
+### 💡 Advanced Hybrid AI (v1.3.0)
 - **Deep Semantic Analysis** - Uses `sentence-transformers` to detect spam by meaning/intent
 - **Gradient Boosting** - XGBoost-style algorithm for complex pattern recognition
 - **Anti-Obfuscation** - Character N-grams catch `P.r.0.f.i.t`, `1nv3stment`
