@@ -1831,10 +1831,11 @@ I am a spam detection bot that protects Telegram groups from:
         """
         logger.info(f"🎓 Admin {user_id} teaching new scam: {description[:100]}")
         
-        # Send initial message
-        processing_msg = await self._send_message(
+        # Send IMMEDIATE acknowledgement
+        ack_msg = await self._send_message(
             chat_id,
-            "🔍 Analyzing scam pattern...\nExtracting keywords and patterns using AI..."
+            "🎓 <b>Scam registered!</b>\n"
+            "⏳ Processing and training ML model..."
         )
         
         patterns = None
@@ -1891,9 +1892,9 @@ I am a spam detection bot that protects Telegram groups from:
         response += "🤖 <b>ML Model:</b> Retrained with this example\n\n"
         response += "💡 The bot will now detect similar scams automatically!"
         
-        # Update the processing message
-        if processing_msg:
-            await self._edit_message(chat_id, processing_msg.get('message_id'), response)
+        # Update the acknowledgement message with results
+        if ack_msg:
+            await self._edit_message(chat_id, ack_msg.get('message_id'), response)
         else:
             await self._send_message(chat_id, response)
         
