@@ -280,9 +280,18 @@ class SpamClassifier:
                 
         self.is_trained = standard_loaded or advanced_loaded
         
-        # Train if missing
-        if not standard_loaded or (EMBEDDINGS_AVAILABLE and not advanced_loaded):
-            self._train_models()
+        # Train on startup
+        self._train_models()
+    
+    def retrain(self):
+        """Retrain the ML model with current dataset (called by /newscam)"""
+        if not ML_AVAILABLE:
+            logger.warning("ML not available, cannot retrain")
+            return
+        
+        logger.info("🔄 Retraining ML models...")
+        self._train_models()
+        logger.info("✅ ML models retrained successfully")
     
     def _train_models(self):
         """Train available models."""
