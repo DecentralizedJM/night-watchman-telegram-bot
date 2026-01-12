@@ -1902,21 +1902,21 @@ I am a spam detection bot that protects Telegram groups from:
         except Exception as e:
             logger.error(f"ML training error: {e}")
         
-        # Build response message
-        response = "✅ <b>Learned new scam pattern!</b>\n\n"
+        # Build response message with tough ex-marine personality
+        response = "✅ <b>Intel received and processed.</b>\n\n"
         
         if patterns and (patterns['keywords'] or patterns['regex_patterns']):
-            response += f"📝 <b>Category:</b> {patterns['category']}\n\n"
+            response += f"📝 <b>Threat type:</b> {patterns['category']}\n\n"
             
             if patterns['keywords']:
                 keywords_str = ', '.join(patterns['keywords'][:10])
-                response += f"🔑 <b>Keywords extracted:</b>\n<code>{keywords_str}</code>\n\n"
+                response += f"🎯 <b>Patterns identified:</b>\n<code>{keywords_str}</code>\n\n"
             
             if patterns['regex_patterns']:
-                response += f"🎯 <b>Patterns:</b> {len(patterns['regex_patterns'])} regex patterns extracted\n\n"
+                response += f"🔍 <b>Signatures extracted:</b> {len(patterns['regex_patterns'])} detection patterns\n\n"
         
-        response += "🤖 <b>ML Model:</b> Retrained with this example\n\n"
-        response += "💡 The bot will now detect similar scams automatically!"
+        response += "🧠 <b>Updated my threat database.</b> I'm trained and ready.\n\n"
+        response += "💪 Next time these punks show up, I'll catch 'em instantly. No one gets past me twice."
         
         # Update the acknowledgement message with results
         if ack_msg:
@@ -2360,21 +2360,21 @@ I am a spam detection bot that protects Telegram groups from:
                 if scam_msg_id:
                     await self._delete_message(chat_id, scam_msg_id)
                 
-                # Build success message
-                response = f"""✅ <b>Scammer handled!</b>
+                # Build success message with tough ex-marine personality
+                response = f"""✅ <b>Target neutralized.</b>
 
-👤 <b>User:</b> {scammer_name} (@{scammer_username if scammer_username else 'no username'})
+👤 <b>Scammer:</b> {scammer_name} (@{scammer_username if scammer_username else 'no username'})
 🆔 <b>ID:</b> <code>{scammer_id}</code>
 
-📝 <b>Actions taken:</b>
-• Learned scam patterns from their message
-• ML model retrained immediately
-• User banned permanently
-• Message deleted
+⚔️ <b>Actions taken:</b>
+• Analyzed their tactics and patterns
+• Updated my threat database
+• Banned permanently - they're not getting back in
+• Message deleted - no trace left
 
-💡 <b>Thank you!</b> The bot will now catch similar scammers automatically.
+💪 <b>Thanks for the intel, boss.</b> I've memorized their playbook. Next scammer who tries this? I'll catch 'em before they even finish typing.
 
-🛡️ Your group is now better protected!"""
+🛡️ <b>Your group is locked down tighter now.</b>"""
                 
                 # Update acknowledgement message
                 if ack_msg:
