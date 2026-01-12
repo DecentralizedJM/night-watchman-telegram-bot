@@ -574,7 +574,7 @@ class NightWatchman:
             
             # Check for admin commands first (BEFORE skipping admin messages)
             if self.config.ADMIN_COMMANDS_ENABLED and text.startswith('/'):
-                admin_commands = ['/warn', '/ban', '/mute', '/unwarn', '/enhance', '/stats', '/kick']
+                admin_commands = ['/warn', '/ban', '/mute', '/unwarn', '/enhance', '/stats', '/kick', '/newscam']
                 command_word = text.split()[0].lower().split('@')[0]  # Handle /warn@botname format
                 
                 if command_word in admin_commands:
@@ -625,8 +625,29 @@ class NightWatchman:
                 message.get('forward_date') or 
                 message.get('forward_from') or 
                 message.get('forward_from_chat') or
-                message.get('forward_origin')  # New Telegram API field
+                message.get('forward_origin')  # New Telegram API field (includes stories)
             )
+            
+            # Determine forward type for better logging
+            forward_type = "unknown"
+            if is_forwarded:
+                forward_origin = message.get('forward_origin', {})
+                if isinstance(forward_origin, dict):
+                    origin_type = forward_origin.get('type', '')
+                    if origin_type == 'user':
+                        forward_type = "user message"
+                    elif origin_type == 'channel':
+                        forward_type = "channel post"
+                    elif origin_type == 'hidden_user':
+                        forward_type = "hidden user"
+                    elif origin_type == 'story':
+                        forward_type = "STORY"  # STORIES are often used for scams
+                    else:
+                        forward_type = origin_type or "legacy forward"
+                elif message.get('forward_from'):
+                    forward_type = "user message (legacy)"
+                elif message.get('forward_from_chat'):
+                    forward_type = "channel/group (legacy)"
             
             # Check for content shared via bot/mini app (via_bot field)
             via_bot = message.get('via_bot')
@@ -649,7 +670,7 @@ class NightWatchman:
                     return
             
             if is_forwarded:
-                logger.info(f"📤 Forwarded message detected from {user_name} (@{username})")
+                logger.info(f"📤 Forwarded message detected [{forward_type}] from {user_name} (@{username})")
                 if self.config.BLOCK_FORWARDS:
                     # Check if admin
                     is_admin = self.config.FORWARD_ALLOW_ADMINS and await self._is_admin(chat_id, user_id)
@@ -664,12 +685,13 @@ class NightWatchman:
                         pass  # Allow admins and VIPs
                     else:
                         # CRITICAL: Analyze forwarded message for spam BEFORE taking action
-                        # This catches casino spam, bot links, porn, etc. in forwards
+                        # This catches casino spam, bot links, porn, etc. in forwards (including stories)
                         forward_result = await self.detector.analyze(text, user_id, None, entities)
                         
                         # If forwarded message contains instant-ban content, BAN immediately
                         if forward_result.get('instant_ban'):
                             await self._delete_message(chat_id, message_id)
+                            logger.warning(f"⚠️ INSTANT BAN - Forwarded {forward_type} contained banned content")
                             await self._handle_instant_ban(
                                 chat_id=chat_id,
                                 message_id=message_id,
@@ -698,6 +720,7 @@ class NightWatchman:
                                     await self._send_message(
                                         self.admin_chat_id,
                                         f"📤 <b>Forward Spam - INSTANT BAN</b>\n\n"
+                                        f"🎭 Type: {forward_type}\n"
                                         f"👤 User: {user_name} (@{username or 'N/A'})\n"
                                         f"🆔 ID: <code>{user_id}</code>\n"
                                         f"📝 Message: <code>{text[:200] if text else '[no text]'}</code>\n"
@@ -1795,6 +1818,101 @@ I am a spam detection bot that protects Telegram groups from:
         
         logger.info(f"📢 Report from {user_name}: reported {reported_user_name}")
     
+    
+    async def _handle_newscam_command(self, chat_id: int, user_id: int, description: str):
+        """
+        Handle /newscam command - teach bot about new scams.
+        Extracts patterns and retrains ML model.
+        
+        Args:
+            chat_id: Chat ID where command was sent
+            user_id: Admin user ID
+            description: Natural language description of the scam
+        """
+        logger.info(f"🎓 Admin {user_id} teaching new scam: {description[:100]}")
+        
+        # Send initial message
+        processing_msg = await self._send_message(
+            chat_id,
+            "🔍 Analyzing scam pattern...\nExtracting keywords and patterns using AI..."
+        )
+        
+        patterns = None
+        
+        # Try to extract patterns using Gemini
+        if self.detector.gemini_scanner and self.detector.gemini_scanner.enabled:
+            try:
+                from pattern_extractor import extract_patterns_from_description, validate_and_sanitize_patterns
+                
+                patterns = await extract_patterns_from_description(
+                    self.detector.gemini_scanner,
+                    description
+                )
+                
+                if patterns:
+                    # Validate and sanitize  
+                    patterns = validate_and_sanitize_patterns(patterns)
+                    logger.info(f"✅ Extracted patterns: {patterns}")
+                else:
+                    logger.warning("Failed to extract patterns from description")
+                    
+            except Exception as e:
+                logger.error(f"Pattern extraction error: {e}")
+        
+        # Add to ML training data (always, even if pattern extraction failed)
+        try:
+            # Add the description itself as a spam example
+            if hasattr(self.detector, 'ml_classifier') and self.detector.ml_classifier:
+                self.detector.ml_classifier.add_spam_sample(description)
+                logger.info(f"📝 Added scam example to ML training data")
+                
+                # Auto-retrain ML model immediately
+                logger.info(f"🔄 Retraining ML model...")
+                await asyncio.to_thread(self.detector.ml_classifier.retrain)
+                logger.info(f"✅ ML model retrained")
+            else:
+                logger.warning("ML classifier not available")
+        except Exception as e:
+            logger.error(f"ML training error: {e}")
+        
+        # Build response message
+        response = "✅ <b>Learned new scam pattern!</b>\n\n"
+        
+        if patterns and (patterns['keywords'] or patterns['regex_patterns']):
+            response += f"📝 <b>Category:</b> {patterns['category']}\n\n"
+            
+            if patterns['keywords']:
+                keywords_str = ', '.join(patterns['keywords'][:10])
+                response += f"🔑 <b>Keywords extracted:</b>\n<code>{keywords_str}</code>\n\n"
+            
+            if patterns['regex_patterns']:
+                response += f"🎯 <b>Patterns:</b> {len(patterns['regex_patterns'])} regex patterns extracted\n\n"
+        
+        response += "🤖 <b>ML Model:</b> Retrained with this example\n\n"
+        response += "💡 The bot will now detect similar scams automatically!"
+        
+        # Update the processing message
+        if processing_msg:
+            await self._edit_message(chat_id, processing_msg.get('message_id'), response)
+        else:
+            await self._send_message(chat_id, response)
+        
+        # Report to admin chat if different
+        if self.admin_chat_id and self.admin_chat_id != chat_id:
+            from html import escape as html_escape
+            admin_report = f"""🎓 <b>New Scam Learned</b>
+
+👤 Admin: {user_id}
+💬 Chat: <code>{chat_id}</code>
+
+📝 Description:
+{html_escape(description[:500])}
+
+{f"🔑 Keywords: {', '.join(patterns['keywords'][:5])}" if patterns and patterns['keywords'] else ""}
+✅ ML model retrained
+"""
+            await self._send_message(self.admin_chat_id, admin_report)
+    
     async def _is_admin(self, chat_id: int, user_id: int) -> bool:
         """Check if user is admin in chat"""
         try:
@@ -2174,6 +2292,26 @@ I am a spam detection bot that protects Telegram groups from:
             elif target_name:
                 logger.warning(f"Found username {target_name} but couldn't resolve to user_id")
 
+        
+        # === ADAPTIVE LEARNING COMMANDS ===
+        
+        if command == '/newscam':
+            # Extract description from command
+            description = ' '.join(parts[1:]) if len(parts) > 1 else None
+            
+            if not description or len(description) < 20:
+                await self._send_message(
+                    chat_id,
+                    "❌ Please provide a description of the scam.\n\n"
+                    "Usage: <code>/newscam This is a scam where they say...</code>\n\n"
+                    "Example: <code>/newscam They're promoting 88casino with code mega2026 for $1000</code>"
+                )
+                return
+            
+            await self._handle_newscam_command(chat_id, user_id, description)
+            return
+        
+        # === MODERATION COMMANDS ===
         
         if command == '/warn':
             if target_user_id:
@@ -2667,9 +2805,31 @@ No CAS ban record found."""
                     ))
                 
                 return result  # Return full response
-            return {}  # Return empty dict on failure
+            else:
+                logger.error(f"Error sending message: {response_data.get('description')}")
         except Exception as e:
             logger.error(f"Error sending message: {e}")
+        return {}  # Return empty dict on error
+    
+    async def _edit_message(self, chat_id: int, message_id: int, new_text: str) -> Dict:
+        """Edit an existing message"""
+        try:
+            url = f"https://api.telegram.org/bot{self.token}/editMessageText"
+            data = {
+                'chat_id': chat_id,
+                'message_id': message_id,
+                'text': new_text,
+                'parse_mode': 'HTML'
+            }
+            response = await self.client.post(url, json=data, timeout=10.0)
+            result = response.json()
+            
+            if result.get('ok'):
+                return result.get('result', {})
+            else:
+                logger.error(f"Error editing message: {result.get('description')}")
+        except Exception as e:
+            logger.error(f"Exception editing message: {e}")
         return {}  # Return empty dict on error
     
     async def _auto_delete_message(self, chat_id: int, message_id: int, delay_seconds: int):

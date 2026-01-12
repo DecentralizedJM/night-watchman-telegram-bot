@@ -73,6 +73,8 @@ class Config:
         "winning streak", "top prize", "grab bonus", "telegram bonus",
         "enter code", "heating up", "could be yours", "get bonus",
         "$200 free", "$100 free", "$500 free", "free $",
+        "52casino", "reward received", "successfully received",  # NEW: 52casino specific
+        "sign up here:", "dont forget", "start playing",  # NEW: Casino CTAs
         
         # Adult/Porn (INSTANT BAN)
         "xxx", "porn", "p-o-r-n", "x x x", "p o r n",
@@ -118,10 +120,15 @@ class Config:
         "onlyfans", "only fans", "nudes",
         # Casino/Betting (specific, not generic)
         "1win", "1xbet", "xwin", "22bet", "melbet", "mostbet",
+        "52casino", "52 casino", ".52casino.cc", "52casino.cc",  # NEW: Specific casino from screenshots
         "casino bonus", "welcome bonus", "free spins",
         "winning streak", "top prize", "grab bonus", "telegram bonus",
         "on your balance", "get your balance", "activate promo",
         "play anywhere", "bet220", "promocasbot",
+        "reward received", "your reward has been", "reward has been successfully",  # NEW: Casino reward messages
+        "congratulations!", "won $100", "won $200", "$100 instantly",  # NEW: Specific amounts (note: removed space after !)
+        "promo code \"lucky", "enter promo code", "dont forget: enter promo",  # NEW: Promo code patterns
+        "start playing today", "cash out", "withdraw",  # NEW: Casino CTAs
         # Scam patterns
         "dm me now", "inbox me", "message me now",
         # Recruitment scam instant ban patterns

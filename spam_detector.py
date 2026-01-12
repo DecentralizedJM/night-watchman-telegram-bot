@@ -95,6 +95,18 @@ class SpamDetector:
         except Exception as e:
             logger.error(f"Failed to initialize Gemini scanner: {e}")
         
+        # Initialize Hugging Face Classifier
+        self.hf_classifier = None
+        try:
+            from hf_classifier import get_hf_classifier
+            self.hf_classifier = get_hf_classifier()
+            if self.hf_classifier.enabled:
+                logger.info("🤗 Hugging Face classifier connected")
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.error(f"Failed to initialize HF classifier: {e}")
+        
         # Track user message history for rate limiting
         self.user_messages: Dict[int, List[datetime]] = {}
         
@@ -188,6 +200,39 @@ class SpamDetector:
             r'[\U0001F600-\U0001F64F]|'  # Emoticons
             r'[\U0001F680-\U0001F6FF]|'  # Transport & map symbols
             r'[\U0001F1E0-\U0001F1FF]'   # Flags
+        )
+        
+        # === ADAPTIVE PATTERNS (for novel scam detection) ===
+        
+        # Generic casino pattern: any number + casino (catches 42casino, 77casino, 33casino, etc.)
+        self.generic_casino_pattern = re.compile(
+            r'\d{1,3}\s*casino|'         # 42casino, 77 casino
+            r'casino\s*\d{1,3}|'         # casino42, casino 77
+            r'\d{1,3}[a-z]{0,5}casino|'  # 42xcasino, 52newcasino
+            r'casino[a-z]{0,5}\d{1,3}',  # casinox42, casinopro77
+            re.IGNORECASE
+        )
+        
+        # Promo code patterns with variables (catches lucky2026, win2025, mega2024, etc.)
+        self.promo_pattern = re.compile(
+            r'(promo|promocode|code)\s*[:\"]?\s*[a-z]{3,12}\d{2,4}|'  # promo: lucky2026, code win2025
+            r'enter\s+(code|promo)|'                                    # enter code, enter promo
+            r'use\s+(code|promo)\s*[:\"]?\s*[a-z]{3,12}\d{0,4}',       # use code lucky, use promo mega2026
+            re.IGNORECASE
+        )
+        
+        # Reward/congratulations with money (catches any reward + dollar amount)
+        self.reward_money_pattern = re.compile(
+            r'(congratulations|congrats|reward|won|claim|received).{0,40}\$\d{2,5}|'  # congratulations... $100
+            r'\$\d{2,5}.{0,40}(received|bonus|free|instant|balance)',                  # $100... instantly
+            re.IGNORECASE
+        )
+        
+        # Sign up + URL pattern (catches signup scams)
+        self.signup_url_pattern = re.compile(
+            r'(sign\s*up|signup|register)\s+(here|now|at)[:\s]*https?://|'
+            r'(sign\s*up|signup|register).{0,20}(www\.|http)',
+            re.IGNORECASE
         )
     
     async def analyze(self, message: str, user_id: int, user_join_date: Optional[datetime] = None,
@@ -401,6 +446,39 @@ class SpamDetector:
                 except Exception as e:
                     logger.error(f"Error during Gemini scan: {e}")
 
+        # Step 13: Hugging Face Zero-Shot Classification (Fallback)
+        # Use HF if available and message is suspicious but not yet definitively spam
+        current_score = result['spam_score']
+        
+        if current_score < 0.9 and hasattr(self, 'hf_classifier') and self.hf_classifier and self.hf_classifier.enabled:
+            # Run HF for borderline cases or when Gemini not available
+            should_scan_hf = False
+            
+            if 0.3 <= current_score <= 0.7:
+                should_scan_hf = True
+            elif is_first_message and len(message) > 50:
+                should_scan_hf = True
+            
+            if should_scan_hf:
+                try:
+                    hf_result = await self.hf_classifier.classify(message)
+                    
+                    if hf_result:
+                        is_hf_spam = hf_result.get('is_spam', False)
+                        hf_confidence = hf_result.get('confidence', 0.0)
+                        hf_category = hf_result.get('category', 'unknown')
+                        
+                        if is_hf_spam and hf_confidence > 0.7:
+                            logger.info(f"🤗 HF detected spam: {hf_category} ({hf_confidence:.0%})")
+                            result['spam_score'] = max(result['spam_score'], hf_confidence)
+                            result['reasons'].append(f"HF AI: {hf_category}")
+                        elif not is_hf_spam and hf_confidence > 0.8:
+                            # HF is very confident it's legitimate
+                            logger.info(f"🤗 HF cleared message ({hf_confidence:.0%})")
+                            result['spam_score'] = min(result['spam_score'], 0.25)
+                except Exception as e:
+                    logger.error(f"Error during HF classification: {e}")
+
         # Determine if spam based on score
         if result['spam_score'] >= 0.7:
             result['is_spam'] = True
@@ -502,10 +580,13 @@ class SpamDetector:
         # Definite casino spam (instant ban on these alone)
         definite_casino = [
             '1win', '1xbet', 'xwin', '22bet', 'melbet', 'mostbet', 'linebet',
+            '52casino', '52 casino', '.52casino.cc', '52casino.cc',  # NEW: 52casino
             'casino bonus', 'free spins', 'slot machine', 'betting bonus',
             'on your balance', 'activate the promo', 'activate promo',
             'play anywhere', 'get $', 'your balance', 'promocasbot',
-            'bet220', 'bet200', 'bet100', '$220', '$200 free', '$100 free'
+            'bet220', 'bet200', 'bet100', '$220', '$200 free', '$100 free',
+            'reward received', 'your reward has been', 'successfully received',  # NEW: Reward messages
+            'congratulations! $', 'won $100', 'won $200', '$100 instantly',  # NEW: Dollar amounts
         ]
         for keyword in definite_casino:
             if keyword in message_lower or keyword in message_deobfuscated_lower:
@@ -517,17 +598,23 @@ class SpamDetector:
         # Contextual casino detection: "promo code" only banned if combined with spam signals
         # (This prevents false positives like "how to get promo codes in mudrex")
         has_promo_code = 'promo code' in message_lower or 'promo code' in message_deobfuscated_lower
-        if has_promo_code:
+        has_enter_code = 'enter code' in message_lower or 'enter promo' in message_lower
+        has_lucky_code = 'lucky20' in message_lower or 'lucky2026' in message_lower  # NEW: Specific promo patterns
+        
+        if has_promo_code or has_enter_code or has_lucky_code:
             spam_signals = [
                 'jackpot', 'casino', 'betting', 'win', 'bonus', 'free', 
-                'balance', 'activate', '$', 'play', '🎰', '💰', '🎲'
+                'balance', 'activate', '$', 'play', '🎰', '💰', '🎲',
+                'reward', 'congratulations', 'sign up', 'dont forget',  # NEW: More signals
+                'start playing', 'cash out', 'withdraw',  # NEW: CTAs
             ]
             # Check for bot links or telegram links
             has_bot_link = '@' in message and ('bot' in message_lower or 'win' in message_lower)
             has_spam_signal = any(sig in message_lower for sig in spam_signals)
             has_many_emojis = len(self.emoji_pattern.findall(message)) >= 3
+            has_url = bool(self.url_pattern.search(message))  # NEW: URL check
             
-            if has_bot_link or (has_spam_signal and has_many_emojis):
+            if has_bot_link or has_url or (has_spam_signal and has_many_emojis):
                 result['instant_ban'] = True
                 result['reasons'].append("Promotional spam detected: promo code + spam signals")
                 result['triggers'].append("contextual_casino_spam")
@@ -585,7 +672,45 @@ class SpamDetector:
         if recruitment_result['instant_ban']:
             return recruitment_result
 
-        # 8. FLEXIBLE SCAM PATTERN DETECTION (regex/partial phrase)
+        # 8. ADAPTIVE PATTERN DETECTION (Generic patterns for novel scams)
+        # Check generic casino pattern (42casino, 77casino, etc.)
+        if self.generic_casino_pattern.search(message) or self.generic_casino_pattern.search(message_deobfuscated):
+            result['instant_ban'] = True
+            match = self.generic_casino_pattern.search(message) or self.generic_casino_pattern.search(message_deobfuscated)
+            result['reasons'].append(f"Generic casino spam pattern: {match.group()}")
+            result['triggers'].append("generic_casino")
+            return result
+        
+        # Check promo code pattern (lucky2026, win2025, etc.)
+        promo_match = self.promo_pattern.search(message) or self.promo_pattern.search(message_deobfuscated)
+        if promo_match:
+            # Need additional spam signals to avoid false positives
+            spam_signals = ['casino', '$', 'bonus', 'free', 'win', 'reward', 'sign up', 'claim']
+            has_spam_signal = any(sig in message_lower for sig in spam_signals)
+            has_url = bool(self.url_pattern.search(message))
+            
+            if has_spam_signal or has_url:
+                result['instant_ban'] = True
+                result['reasons'].append(f"Generic promo code spam: {promo_match.group()}")
+                result['triggers'].append("generic_promo")
+                return result
+        
+        # Check reward + money pattern
+        if self.reward_money_pattern.search(message) or self.reward_money_pattern.search(message_deobfuscated):
+            result['instant_ban'] = True
+            match = self.reward_money_pattern.search(message) or self.reward_money_pattern.search(message_deobfuscated)
+            result['reasons'].append(f"Reward/money spam pattern: {match.group()[:50]}")
+            result['triggers'].append("reward_money")
+            return result
+        
+        # Check sign up + URL pattern
+        if self.signup_url_pattern.search(message) or self.signup_url_pattern.search(message_deobfuscated):
+            result['instant_ban'] = True
+            result['reasons'].append("Signup spam with URL")
+            result['triggers'].append("signup_url")
+            return result
+
+        # 9. FLEXIBLE SCAM PATTERN DETECTION (regex/partial phrase)
         flexible_scam_result = self._check_flexible_scam_patterns(message, message_lower)
         if flexible_scam_result['instant_ban']:
             return flexible_scam_result

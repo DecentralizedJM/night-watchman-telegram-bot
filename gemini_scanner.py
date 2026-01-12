@@ -102,7 +102,7 @@ class GeminiScanner:
             
         # Check rate limit
         if not self._check_rate_limit():
-            logger.warning("⏳ Gemini rate limit reached. Skipping scan.")
+            logger.debug("⏳ Gemini rate limit reached. Skipping scan.")
             return None
             
         try:
@@ -113,9 +113,10 @@ Analyze the following message for SPAM, SCAM, PHISHING, or MALICIOUS content.
 Context: Crypto trading community (Mudrex).
 Strictly identify:
 - Crypto scams (doubling money, fake investment schemes)
-- Phishing links (wallet drainers, fake airsrops)
+- Casino/gambling spam (promo codes, bonuses, fake wins)
+- Phishing links (wallet drainers, fake airdrops)
 - Recruitment scams (fake job offers asking to DM)
-- unsolicited promotion/ads
+- Unsolicited promotion/ads
 - NSFW/Adult content
 
 Input context: {user_context}
@@ -124,7 +125,7 @@ Respond in JSON format ONLY:
 {
   "is_spam": boolean,
   "confidence": float (0.0 to 1.0),
-  "category": "string (scam/promo/safe/nsfw/other)",
+  "category": "string (scam/casino/promo/safe/nsfw/other)",
   "reasoning": "short explanation"
 }
 """
@@ -160,8 +161,17 @@ Respond in JSON format ONLY:
                 'reasoning': data.get('reasoning', 'No reason provided')
             }
             
+        except json.JSONDecodeError as e:
+            logger.error(f"Gemini JSON parse error: {e}")
+            return None
         except Exception as e:
-            logger.error(f"Gemini scan error: {e}")
+            error_msg = str(e).lower()
+            if 'quota' in error_msg or 'rate' in error_msg:
+                logger.warning(f"⏳ Gemini quota/rate limit: {e}")
+            elif 'api' in error_msg or 'key' in error_msg:
+                logger.error(f"❌ Gemini API error (check key): {e}")
+            else:
+                logger.error(f"❌ Gemini scan error: {e}")
             return None
 
 # Global instance

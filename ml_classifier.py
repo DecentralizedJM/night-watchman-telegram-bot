@@ -76,7 +76,8 @@ class SpamClassifier:
                 logger.info("✅ Sentence Transformer loaded")
             except Exception as e:
                 logger.error(f"Failed to load embedding model: {e}")
-                EMBEDDINGS_AVAILABLE = False
+                # Don't modify global - just mark as unavailable for this instance
+                self.embedding_model = None
         
         # Load or initialize dataset
         self.dataset = self._load_dataset()
@@ -159,6 +160,14 @@ class SpamClassifier:
                 "I won $5000 on slots last night, try your luck",
                 "Jackpot winner! Claim your bonus now",
                 "Casino bonus activated on your balance",
+                # 52casino specific (from real scam examples)
+                "Congratulations! Your reward of $100 has been successfully received at 52casino",
+                "Sign up here: www.52casino.cc and enter promo code lucky2026 for $100 bonus",
+                "Dont forget: Enter promo code lucky2026 at signup to receive $100 instantly",
+                "Story from 52 casino - Reward Received - $100 on your balance",
+                "Check out 52casino and use code lucky2026 for free spins",
+                "Your reward has been successfully received! Start playing today at 52casino",
+                "Welcome bonus $200 at 52 casino, enter code to activate",
                 
                 # Generic scam patterns
                 "DM me now for exclusive opportunity",

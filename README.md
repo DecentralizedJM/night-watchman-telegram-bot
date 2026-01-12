@@ -2,7 +2,65 @@
 
 **AI-Powered Telegram Superbot** — 24/7 intelligent watchdog with hybrid AI/ML spam detection. Protects your groups from spam, scams, recruitment fraud, and more using advanced Deep Learning + Ensemble ML classifiers.
 
-**Latest Release:** v1.3.0 (January 10, 2026) - 🧠 Advanced AI Hybrid Engine
+**Latest Release:** v1.4.0 (January 13, 2026) - 🧠 Adaptive Scam Detection
+- **NEW:** Generic pattern detection - catches ANY casino variant (42casino, 77casino, 88casino, etc.)
+- **NEW:** /newscam command - teach bot about new scams in natural language
+- **NEW:** Hugging Face zero-shot AI - detects completely novel scams
+- **NEW:** Auto-retraining ML - learns immediately from admin feedback
+- **NEW:** Four-tier detection architecture (Regex → ML → Gemini → HF)
+- **NEW:** Pattern extraction engine - extracts keywords from scam descriptions using AI
+
+## 🧠 Adaptive Scam Detection
+
+Night Watchman now features a **truly adaptive** four-tier AI/ML detection system that learns from new threats and catches novel variations automatically.
+
+### Detection Architecture
+
+![Detection Architecture](docs/detection_architecture.png)
+
+**How It Works:**
+
+1. **Layer 1: Generic Regex** - Fast pattern matching catches known variants (42casino, 77casino, lucky2026, etc.)
+2. **Layer 2: ML Classifier** - Ensemble model trained on spam examples (TF-IDF + 3 classifiers)
+3. **Layer 3: Gemini AI** - Intelligent contextual analysis for subtle patterns
+4. **Layer 4: Hugging Face** - Zero-shot classification for completely novel scams
+
+### 🎓 Teaching the Bot - `/newscam` Command
+
+Admins can now teach the bot about new scams in plain English:
+
+```
+Admin: /newscam They're promoting 88casino with code mega2026 for $1000 bonus
+
+Bot: ✅ Learned new scam pattern!
+     📝 Category: casino
+     🔑 Keywords extracted: 88casino, mega2026, $1000, bonus
+     🎯 Patterns: 2 regex patterns extracted
+     🤖 ML Model: Retrained with this example
+     💡 The bot will now detect similar scams automatically!
+```
+
+**What happens:**
+- Gemini AI extracts keywords and patterns from your description
+- Bot adds example to ML training data
+- ML model retrains **immediately** (5-10 seconds)
+- Bot automatically detects similar scams going forward
+
+### 🎯 Generic Pattern Detection
+
+The bot now catches **ANY variant** automatically:
+
+| Pattern Type | Examples Detected |
+|--------------|-------------------|
+| **Casino variants** | 42casino, 77casino, 88casino, 99casino, casino42, newcasino77 |
+| **Promo codes** | lucky2026, lucky2027, win2025, mega2024, promo2026 |
+| **Reward scams** | "Congratulations! $100 received", "Won $250 instantly" |
+| **Signup spam** | "Sign up here: https://88casino.com" |
+
+**Before:** Only caught specific patterns like "52casino"  
+**Now:** Catches ANY number+casino combination automatically!
+
+**Previous Release:** v1.3.0 (January 10, 2026) - 🧠 Advanced AI Hybrid Engine
 - **NEW:** Hybrid AI Engine (TF-IDF + Semantic Embeddings)
 - **NEW:** "Brain" Upgrade - understands sentence meaning, not just keywords
 - **NEW:** Character N-gram analysis - detects "leetspeak" obfuscation (e.g. `P.r.0.f.i.t`)
@@ -195,11 +253,29 @@ python3 night_watchman.py
 
 ## Environment Variables
 
-| Variable | Description |
-|----------|-------------|
-| `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather |
-| `ADMIN_CHAT_ID` | Your chat ID for spam reports |
-| `ADMIN_USER_IDS` | Comma-separated list of admin user IDs for /analytics |
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather | ✅ Yes |
+| `ADMIN_CHAT_ID` | Your chat ID for spam reports | ✅ Yes |
+| `ADMIN_USER_IDS` | Comma-separated list of admin user IDs | ✅ Yes |
+| `GEMINI_API_KEY` | Google Gemini API key (free tier) | ⚡ Recommended |
+| `HUGGINGFACE_API_KEY` | Hugging Face API token (free tier) | ⚡ Recommended |
+
+### Getting API Keys (FREE)
+
+**Gemini API (already configured):**
+- Free tier: 15-60 RPM
+- Used for intelligent scam analysis
+
+**Hugging Face API (NEW - for adaptive detection):**
+1. Sign up at https://huggingface.co/join (free)
+2. Go to https://huggingface.co/settings/tokens
+3. Click "New token" → Name: `nightwatchman` → Role: `read`
+4. Copy token and add to `.env`: `HUGGINGFACE_API_KEY=hf_xxxxx`
+5. Restart bot
+
+**Without HF API:** Bot still works with 3-tier detection (Regex + ML + Gemini)  
+**With HF API:** Full 4-tier detection + zero-shot novel scam detection
 
 ## Commands
 
@@ -219,6 +295,7 @@ python3 night_watchman.py
 | `/enhance` | Award +15 reputation points (reply to message) |
 | `/cas` | Check user against CAS anti-spam database |
 | `/stats` | Show detailed bot statistics |
+| `/newscam <description>` | **NEW:** Teach bot about new scams (admin only) |
 
 ### Analytics Commands (Admin Only - Private)
 | Command | Description |
