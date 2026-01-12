@@ -55,8 +55,11 @@ Focus on extracting:
         import asyncio
         from google import generativeai as genai
         
+        # Use the model from gemini_scanner instance
+        model = gemini_scanner.model
+        
         response = await asyncio.to_thread(
-            gemini_scanner.model.generate_content,
+            model.generate_content,
             prompt,
             generation_config=genai.types.GenerationConfig(
                 temperature=0.2,  # Low for consistent extraction
