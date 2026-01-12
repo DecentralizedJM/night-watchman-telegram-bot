@@ -1503,6 +1503,32 @@ I am a spam detection bot that protects Telegram groups from:
 ⚠️ Users warned: {self.stats['users_warned']}
 🔇 Users muted: {self.stats['users_muted']}{ml_info}"""
             await self._send_message(chat_id, stats_msg, auto_delete=False)
+    
+        elif text.startswith('/newscam'):
+            # NEW: Admin-only /newscam command in DM
+            if await self._is_admin_in_any_group(user_id):
+                # Extract description
+                parts = text.split(maxsplit=1)
+                description = parts[1] if len(parts) > 1 else None
+                
+                if not description or len(description) < 20:
+                    await self._send_message(
+                        chat_id,
+                        "❌ Please provide a description of the scam.\n\n"
+                        "Usage: <code>/newscam This is a scam where they say...</code>\n\n"
+                        "Example: <code>/newscam They're promoting 88casino with code mega2026 for $1000</code>",
+                        auto_delete=False
+                    )
+                    return
+                
+                # Process the newscam command (applies to all monitored groups)
+                await self._handle_newscam_command(chat_id, user_id, description)
+            else:
+                await self._send_message(
+                    chat_id, 
+                    "⛔ You must be an admin of a group I moderate to use /newscam.",
+                    auto_delete=False
+                )
         
         elif text.startswith('/analytics'):
             # Admin-only analytics command
