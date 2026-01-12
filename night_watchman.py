@@ -125,48 +125,73 @@ class NightWatchman:
         # Cool ban messages for different scenarios
         self.ban_messages = {
             'spam': [
-                "🚫 Bye bye, {name}! No spam allowed here.",
-                "👋 Another spammer bites the dust. {name} is out!",
-                "🎯 Caught red-handed! {name} has been yeeted.",
-                "🛡️ Spam detected, spammer ejected. {name} is gone!",
-            ],
-            'scammer': [
-                "🚨 Scammer alert! {name} tried it. Banned! 💀",
-                "🔥 Nice try, {name}. Scammers get the boot!",
-                "⚡ {name} thought they could scam here. Wrong group, buddy!",
-                "🎭 Unmasked and banned: {name} was a scammer.",
-            ],
-            'adult': [
-                "🔞 Nope! {name} is out for adult content.",
-                "🚫 Keep it clean! {name} has been banned.",
-                "👎 {name} posted inappropriate content. Goodbye!",
-            ],
-            'forward': [
-                "📤 No forwards allowed! {name} didn't listen. Banned!",
-                "🔄 {name} kept forwarding spam. Time to go!",
-            ],
-            'bot': [
-                "🤖 Kicking out this bot. {name} is banned!",
-                "🚫 Bots aren't welcome here. {name} is out!",
-                "⚡ Bot detected and ejected: {name}",
+                "🗑️ {name} - Spam detected. I've seen this garbage before. Banned.",
+                "🚫 {name} - Nice try with the spam. You're out.",
+                "⛔ {name} - Spam? Really? That's an instant ban from me.",
+                "🔨 {name} - I don't tolerate spam. You're permanently banned.",
+                "🗑️ {name} - Caught you spamming. No warnings, just bans.",
             ],
             'casino': [
-                "🎰 {name} tried promoting gambling. Nice try, banned!",
-                "💸 Casino spam = instant ban. Bye {name}!",
+                "🎰 {name} - Casino spam? Not in my house. Banned for life.",
+                "🚫 {name} - Trying to push casino links? That's a hard ban.",
+                "⛔ {name} - I've seen your casino scam before. Out. Now.",
+                "🔨 {name} - Casino promoters don't last long here. Permanently banned.",
+                "🎲 {name} - Gambling spam gets you nowhere except banned.",
             ],
-            'promo': [
-                "📢 {name} spammed promos. Not here! Banned.",
-                "🚫 Promotional spam detected. {name} is out!",
+            'porn': [
+                "🔞 {name} - Inappropriate content. Instant permanent ban. No discussion.",
+                "🚫 {name} - Think I wouldn't catch that? Banned for adult content.",
+                "⛔ {name} - That content has no place here. You're done.",
+                "🔨 {name} - Adult spam gets zero tolerance. Permanent ban.",
+            ],
+            'bot': [
+                "🤖 {name} - Bot account detected. Not allowed. Banned.",
+                "🚫 {name} - No bots in my watch. You're out.",
+                "⛔ {name} - Bot detected. I don't need backup, you're banned.",
+                "🔨 {name} - Bot accounts aren't welcome here. Permanent ban.",
+            ],
+            'dm_spam': [
+                "📩 {name} - Aggressive DM pushing? That's a ban.",
+                "🚫 {name} - 'Inbox me'? Not happening. You're out.",
+                "⛔ {name} - DM solicitation gets you banned. Every time.",
+                "🔨 {name} - Nobody wants your DMs. Permanently banned.",
+            ],
+            'phishing': [
+                "🎣 {name} - Phishing links? I see right through you. Banned.",
+                "🚫 {name} - Nice try with the suspicious link. You're done.",
+                "⛔ {name} - Phishing scam detected. Permanently banned.",
+                "🔨 {name} - These links don't fool me. You're out for good.",
+            ],
+            'forward': [
+                "📤 {name} - Forwarded spam detected. That's an instant ban.",
+                "🚫 {name} - No forwarding garbage here. Banned.",
+                "⛔ {name} - Forwarding spam? I don't think so. Out.",
+                "🔨 {name} - Story forwarding spam gets you banned. Period.",
+                "📤 {name} - Caught your forward. Analyzed. Banned.",
             ],
             'media_spam': [
-                "🖼️ {name} got banned for media spam. Keep it chill!",
-                "📷 Too much too fast! {name} spammed media. Banned!",
-                "🚫 Media spam = ban. Goodbye {name}!",
+                "🖼️ {name} - Media spam? Seriously? Banned.",
+                "🚫 {name} - Flooding with media won't work. You're out.",
+                "⛔ {name} - Media spam detected. Permanent ban.",
+                "🔨 {name} - Stop the spam. Oh wait, you're already banned.",
+            ],
+            'recruitment': [
+                "💼 {name} - Fake job scam? Out. Banned permanently.",
+                "🚫 {name} - Recruitment scam detected. Not today. Banned.",
+                "⛔ {name} - Job scams don't fly here. You're done.",
+                "🔨 {name} - Nobody falls for your 'work from home' garbage. Banned.",
+            ],
+            'foreign_language': [
+                "🌍 {name} - Foreign language spam detected. Banned.",
+                "🚫 {name} - This isn't the place for that. Out.",
+                "⛔ {name} - Language policy violation. Banned permanently.",
+                "🔨 {name} - Wrong language, wrong group. You're banned.",
             ],
             'default': [
-                "🔨 {name} has been banned.",
-                "👋 Goodbye {name}! Rule breakers get the boot.",
-                "⛔ {name} is no longer welcome here.",
+                "🚫 {name} - Out. You don't belong here.",
+                "⛔ {name} - Banned. Don't test me.",
+                "🔨 {name} - That's a permanent ban. I don't give second chances.",
+                "🚷 {name} - You're done here. Move along.",
             ]
         }
 
