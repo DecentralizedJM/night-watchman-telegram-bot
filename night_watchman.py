@@ -2353,14 +2353,23 @@ I am a spam detection bot that protects Telegram groups from:
             
             if reply_to:
                 # REPLY MODE: Learn from the replied message and ban the user
-                scam_text = reply_to.get('text', '')
+                # Check both text AND caption (for media/stories)
+                scam_text = reply_to.get('text') or reply_to.get('caption') or ''
+                
+                # If it's a forward without text, try to get forward info
+                if not scam_text and (reply_to.get('forward_date') or reply_to.get('forward_from') or reply_to.get('forward_from_chat')):
+                    fwd_from = reply_to.get('forward_from_chat', {}).get('title') or reply_to.get('forward_from', {}).get('first_name') or 'Unknown'
+                    scam_text = f"Forwarded content from {fwd_from}"
+                
                 scammer_id = reply_to.get('from', {}).get('id')
                 scammer_name = reply_to.get('from', {}).get('first_name', 'User')
                 scammer_username = reply_to.get('from', {}).get('username', '')
                 
                 if not scam_text:
-                    await self._send_message(chat_id, "❌ The replied message has no text to learn from.")
-                    return
+                    # If still no text, just ban the user but warn admin we couldn't learn
+                    # We continue execution to at least BAN the user
+                    await self._send_message(chat_id, "⚠️ <b>Warning:</b> No text/caption found to learn from, but proceeding with ban.")
+                    scam_text = "Empty message or media-only spam"
                 
                 if not scammer_id:
                     await self._send_message(chat_id, "❌ Could not identify the user from replied message.")
