@@ -2323,7 +2323,86 @@ I am a spam detection bot that protects Telegram groups from:
         # === ADAPTIVE LEARNING COMMANDS ===
         
         if command == '/newscam':
-            # Extract description from command
+            # Check if this is a reply to a message
+            reply_to = message.get('reply_to_message')
+            
+            if reply_to:
+                # REPLY MODE: Learn from the replied message and ban the user
+                scam_text = reply_to.get('text', '')
+                scammer_id = reply_to.get('from', {}).get('id')
+                scammer_name = reply_to.get('from', {}).get('first_name', 'User')
+                scammer_username = reply_to.get('from', {}).get('username', '')
+                
+                if not scam_text:
+                    await self._send_message(chat_id, "❌ The replied message has no text to learn from.")
+                    return
+                
+                if not scammer_id:
+                    await self._send_message(chat_id, "❌ Could not identify the user from replied message.")
+                    return
+                
+                # Send immediate acknowledgement
+                ack_msg = await self._send_message(
+                    chat_id,
+                    f"🎓 <b>Learning from scammer's message...</b>\n"
+                    f"👤 User: {scammer_name}\n"
+                    f"⏳ Processing..."
+                )
+                
+                # Learn from the scam message
+                await self._handle_newscam_command(chat_id, user_id, scam_text)
+                
+                # Ban the scammer
+                banned = await self._ban_user(chat_id, scammer_id)
+                
+                # Delete the scam message
+                scam_msg_id = reply_to.get('message_id')
+                if scam_msg_id:
+                    await self._delete_message(chat_id, scam_msg_id)
+                
+                # Build success message
+                response = f"""✅ <b>Scammer handled!</b>
+
+👤 <b>User:</b> {scammer_name} (@{scammer_username if scammer_username else 'no username'})
+🆔 <b>ID:</b> <code>{scammer_id}</code>
+
+📝 <b>Actions taken:</b>
+• Learned scam patterns from their message
+• ML model retrained immediately
+• User banned permanently
+• Message deleted
+
+💡 <b>Thank you!</b> The bot will now catch similar scammers automatically.
+
+🛡️ Your group is now better protected!"""
+                
+                # Update acknowledgement message
+                if ack_msg:
+                    await self._edit_message(chat_id, ack_msg.get('message_id'), response)
+                else:
+                    await self._send_message(chat_id, response)
+                
+                # Log to admin chat
+                if self.admin_chat_id and self.admin_chat_id != chat_id:
+                    from html import escape as html_escape
+                    admin_report = f"""🎓 <b>Admin Taught Scam via Reply</b>
+
+👤 Admin: {user_id}
+💬 Group: <code>{chat_id}</code>
+
+🚫 Scammer banned: {scammer_name} (@{scammer_username})
+🆔 ID: <code>{scammer_id}</code>
+
+📝 Message learned:
+{html_escape(scam_text[:300])}
+
+✅ ML model retrained
+"""
+                    await self._send_message(self.admin_chat_id, admin_report)
+                
+                return
+            
+            # DESCRIPTION MODE: Extract description from command
             description = ' '.join(parts[1:]) if len(parts) > 1 else None
             
             if not description or len(description) < 20:
