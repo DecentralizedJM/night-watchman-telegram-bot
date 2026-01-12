@@ -911,10 +911,25 @@ class NightWatchman:
                 # Check if this is their first tracked message (no activity yet)
                 is_first_message = user_rep_data.get('total_messages', 0) == 0
             
+            # Check for photos
+            image_data = None
+            if message.get('photo') and getattr(self.config, 'GEMINI_ENABLED', False):
+                try:
+                    # Get largest photo
+                    photos = message.get('photo', [])
+                    if photos:
+                        largest_photo = sorted(photos, key=lambda x: x.get('file_size', 0), reverse=True)[0]
+                        file_id = largest_photo.get('file_id')
+                        if file_id:
+                            image_data = await self._download_photo(file_id)
+                except Exception as e:
+                    logger.error(f"Error processing photo: {e}")
+
             # Analyze message for spam and bad language
             result = await self.detector.analyze(
                 text, user_id, join_date, entities,
-                user_rep=user_rep, is_first_message=is_first_message
+                user_rep=user_rep, is_first_message=is_first_message,
+                image_data=image_data
             )
             
             # REPUTATION CHECK: Higher reputation users get leniency

@@ -414,10 +414,14 @@ class SpamDetector:
             elif is_first_message and current_score > 0.1 and (entities or len(message) > 200):
                 should_scan = True
                 
+            # Case 3: Image present (always scan images if Gemini enabled)
+            elif image_data:
+                should_scan = True
+                
             if should_scan:
                 try:
                     # Provide a timeout to ensure we don't hang the bot
-                    gemini_result = await self.gemini_scanner.scan_message(message)
+                    gemini_result = await self.gemini_scanner.scan_message(message, image_data=image_data)
                     
                     if gemini_result:
                         gemini_score = gemini_result.get('confidence', 0.0)
