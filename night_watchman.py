@@ -19,6 +19,9 @@ from spam_detector import SpamDetector
 from analytics_tracker import AnalyticsTracker
 from reputation_tracker import ReputationTracker
 from ticker_fetcher import ticker_fetcher, get_crypto_tickers
+from behavior_profiler import BehaviorProfiler
+from context_analyzer import ContextAnalyzer
+from adaptive_thresholds import AdaptiveThresholds
 
 load_dotenv()
 
@@ -99,6 +102,12 @@ class NightWatchman:
         self.detector = SpamDetector()
         self.analytics = AnalyticsTracker()  # Analytics tracker
         self.reputation = ReputationTracker()  # Reputation system
+        
+        # Intelligent moderation systems
+        data_dir = getattr(self.config, 'ANALYTICS_DATA_DIR', 'data')
+        self.behavior_profiler = BehaviorProfiler(data_dir) if self.config.BEHAVIOR_PROFILING_ENABLED else None
+        self.context_analyzer = ContextAnalyzer() if self.config.CONTEXT_AWARE_MODERATION_ENABLED else None
+        self.adaptive_thresholds = AdaptiveThresholds(data_dir) if self.config.ADAPTIVE_THRESHOLDS_ENABLED else None
         
         # Track chat member join dates
         self.member_join_dates: Dict[str, datetime] = {}  # f"{chat_id}_{user_id}" -> datetime
@@ -340,6 +349,16 @@ class NightWatchman:
         if old_members:
             logger.debug(f"🧹 Cleaned {len(old_members)} old member_join_dates entries")
             cleaned = True
+        
+        # 9. Cleanup context analyzer
+        if self.context_analyzer:
+            self.context_analyzer.cleanup_old_context()
+        
+        # 10. Save behavior profiles and adaptive thresholds
+        if self.behavior_profiler:
+            self.behavior_profiler.save()
+        if self.adaptive_thresholds:
+            self.adaptive_thresholds.save()
         
         if cleaned:
             logger.info(f"🧹 Memory cleanup completed")
@@ -980,12 +999,63 @@ class NightWatchman:
                 except Exception as e:
                     logger.error(f"Error processing photo: {e}")
 
+            # Track message for behavior profiling
+            if self.behavior_profiler:
+                message_timestamp = datetime.fromtimestamp(message.get('date', 0), tz=timezone.utc) if message.get('date') else datetime.now(timezone.utc)
+                self.behavior_profiler.track_message(user_id, text, message_timestamp)
+            
+            # Add message to context analyzer
+            if self.context_analyzer:
+                message_timestamp = datetime.fromtimestamp(message.get('date', 0), tz=timezone.utc) if message.get('date') else datetime.now(timezone.utc)
+                self.context_analyzer.add_message(chat_id, user_id, text, message_timestamp)
+            
             # Analyze message for spam and bad language
             result = await self.detector.analyze(
                 text, user_id, join_date, entities,
                 user_rep=user_rep, is_first_message=is_first_message,
                 image_data=image_data
             )
+            
+            original_spam_score = result['spam_score']
+            
+            # CONTEXT-AWARE MODERATION: Adjust score based on conversation context
+            if self.context_analyzer and not result.get('instant_ban'):
+                adjusted_score, context_reasons = self.context_analyzer.should_reduce_spam_score(
+                    chat_id, text, user_id, original_spam_score
+                )
+                if adjusted_score < original_spam_score:
+                    result['spam_score'] = adjusted_score
+                    result['reasons'].extend(context_reasons)
+                    logger.debug(f"🧠 Context-aware: Reduced spam score from {original_spam_score:.2f} to {adjusted_score:.2f}")
+            
+            # BEHAVIOR ANOMALY DETECTION: Check if message is anomalous
+            anomaly_boost = 0.0
+            if self.behavior_profiler and self.config.BEHAVIOR_ANOMALY_DETECTION_ENABLED:
+                message_timestamp = datetime.fromtimestamp(message.get('date', 0), tz=timezone.utc) if message.get('date') else datetime.now(timezone.utc)
+                is_anomaly, anomaly_score, anomaly_reasons = self.behavior_profiler.detect_anomaly(user_id, text, message_timestamp)
+                if is_anomaly and anomaly_score >= self.config.BEHAVIOR_ANOMALY_THRESHOLD:
+                    # Boost spam score if behavior is anomalous (but don't override instant ban)
+                    anomaly_boost = min(0.3, anomaly_score * 0.4)  # Max 0.3 boost
+                    result['spam_score'] = min(1.0, result['spam_score'] + anomaly_boost)
+                    result['reasons'].extend([f"Behavior anomaly: {r}" for r in anomaly_reasons])
+                    logger.info(f"⚠️ Behavior anomaly detected for user {user_id}: {anomaly_reasons}")
+            
+            # ADAPTIVE THRESHOLDS: Get group-specific thresholds
+            if self.adaptive_thresholds:
+                group_thresholds = self.adaptive_thresholds.get_thresholds(chat_id)
+                
+                # Re-determine action based on adaptive thresholds
+                if result['spam_score'] >= group_thresholds['delete_and_warn']:
+                    result['action'] = 'delete_and_warn'
+                    result['is_spam'] = True
+                elif result['spam_score'] >= group_thresholds['delete_only']:
+                    result['action'] = 'delete'
+                    result['is_spam'] = True
+                elif result['spam_score'] >= group_thresholds['flag_for_review']:
+                    result['action'] = 'flag'
+                else:
+                    result['action'] = 'none'
+                    result['is_spam'] = False
             
             # REPUTATION CHECK: Higher reputation users get leniency
             is_high_rep = False
@@ -1074,6 +1144,10 @@ class NightWatchman:
                             f"🔇 <b>{user_name}</b> has been muted for {self.config.MUTE_DURATION_HOURS}h for posting disallowed links."
                         )
                 else:
+                    # Record decision for adaptive thresholds
+                    if self.adaptive_thresholds:
+                        self.adaptive_thresholds.record_decision(chat_id, result['spam_score'], result['action'])
+                    
                     await self._handle_spam(
                         chat_id=chat_id,
                         message_id=message_id,
@@ -2539,6 +2613,10 @@ I am a spam detection bot that protects Telegram groups from:
                     if len(warned_text) > 15:
                         self.detector.learn_spam(warned_text)
                         logger.info(f"📝 ML learning spam from /warn reply")
+                        
+                        # Record admin action for adaptive thresholds learning
+                        if self.adaptive_thresholds:
+                            self.adaptive_thresholds.record_admin_action(chat_id, 0.8, 'warn')
             else:
                 await self._send_message(chat_id, "⚠️ Usage: Reply to message, /warn @username, or /warn <user_id>")
             
@@ -2555,6 +2633,10 @@ I am a spam detection bot that protects Telegram groups from:
                         if len(banned_text) > 15:
                             self.detector.learn_spam(banned_text)
                             logger.info(f"📝 ML learning spam from /ban reply")
+                            
+                            # Record admin action for adaptive thresholds learning
+                            if self.adaptive_thresholds:
+                                self.adaptive_thresholds.record_admin_action(chat_id, 0.9, 'ban')
             else:
                 await self._send_message(chat_id, "⚠️ Usage: Reply to message, /ban @username, or /ban <user_id>")
                 
@@ -2588,6 +2670,11 @@ I am a spam detection bot that protects Telegram groups from:
                     if len(unwarned_text) > 15:
                         self.detector.learn_ham(unwarned_text)
                         logger.info(f"📝 ML learning ham from /unwarn (false positive correction)")
+                        
+                        # Record false positive for adaptive thresholds
+                        if self.adaptive_thresholds:
+                            self.adaptive_thresholds.record_false_positive(chat_id)
+                            self.adaptive_thresholds.record_admin_action(chat_id, 0.5, 'unwarn')
             else:
                 await self._send_message(chat_id, "⚠️ Usage: Reply to message, /unwarn @username, or /unwarn <user_id>")
             

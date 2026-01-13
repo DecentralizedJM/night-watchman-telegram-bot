@@ -622,3 +622,19 @@ You have 24 hours before being removed."""
     # Logging
     LOG_FILE = "logs/night_watchman.log"
     LOG_LEVEL = "INFO"
+    
+    # ==================== INTELLIGENT MODERATION FEATURES ====================
+    
+    # User Behavior Profiling
+    BEHAVIOR_PROFILING_ENABLED = True
+    BEHAVIOR_ANOMALY_DETECTION_ENABLED = True
+    BEHAVIOR_ANOMALY_THRESHOLD = 0.5  # Score threshold for anomaly detection
+    
+    # Context-Aware Moderation
+    CONTEXT_AWARE_MODERATION_ENABLED = True
+    CONTEXT_SCORE_REDUCTION_MAX = 0.4  # Maximum spam score reduction from context
+    
+    # Adaptive Thresholds
+    ADAPTIVE_THRESHOLDS_ENABLED = True
+    ADAPTIVE_THRESHOLDS_MIN_SAMPLES = 10  # Minimum admin actions before learning
+    ADAPTIVE_THRESHOLDS_ADJUSTMENT_RATE = 0.05  # How much to adjust thresholds per correction
