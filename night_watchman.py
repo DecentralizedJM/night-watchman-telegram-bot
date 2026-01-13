@@ -7,6 +7,7 @@ import asyncio
 import html
 import logging
 import os
+import re
 import sys
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, List
@@ -31,6 +32,29 @@ def html_escape(text: str) -> str:
 
 # Setup logging
 os.makedirs("logs", exist_ok=True)
+
+# SECURITY: Filter to redact sensitive information (tokens, API keys) from logs
+class SecurityFilter(logging.Filter):
+    """Filter to redact sensitive information from log messages"""
+    def filter(self, record):
+        if hasattr(record, 'msg'):
+            msg = str(record.msg)
+            # Redact bot tokens (pattern: /bot\d+:[A-Za-z0-9_-]+)
+            msg = re.sub(r'/bot(\d+):([A-Za-z0-9_-]+)', r'/bot\1:[REDACTED]', msg)
+            # Redact API keys in URLs
+            msg = re.sub(r'(api[_-]?key=)([A-Za-z0-9_-]+)', r'\1[REDACTED]', msg, flags=re.IGNORECASE)
+            msg = re.sub(r'(token=)([A-Za-z0-9_-]+)', r'\1[REDACTED]', msg, flags=re.IGNORECASE)
+            record.msg = msg
+        if hasattr(record, 'args') and record.args:
+            # Also filter args (used in formatted messages)
+            args = list(record.args)
+            for i, arg in enumerate(args):
+                if isinstance(arg, str):
+                    args[i] = re.sub(r'/bot(\d+):([A-Za-z0-9_-]+)', r'/bot\1:[REDACTED]', arg)
+                    args[i] = re.sub(r'(api[_-]?key=)([A-Za-z0-9_-]+)', r'\1[REDACTED]', str(args[i]), flags=re.IGNORECASE)
+            record.args = tuple(args)
+        return True
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -39,6 +63,15 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+
+# Apply security filter to all loggers
+security_filter = SecurityFilter()
+logging.getLogger().addFilter(security_filter)
+
+# SECURITY: Disable verbose httpx logging (it logs full URLs with tokens)
+logging.getLogger("httpx").setLevel(logging.WARNING)  # Only log WARNING and above
+logging.getLogger("httpcore").setLevel(logging.WARNING)  # httpcore is used by httpx
+
 logger = logging.getLogger(__name__)
 
 
@@ -643,6 +676,28 @@ class NightWatchman:
                 self.analytics.track_message(user_id, chat_id)
             if self.config.REPUTATION_ENABLED:
                 self.reputation.track_daily_activity(user_id, username, user_name)
+            
+            # Check for story shares (BAN ALL STORY SHARES)
+            has_story = message.get('story')
+            if has_story:
+                logger.warning(f"📖 Story share detected from {user_name} (@{username}) - INSTANT BAN")
+                await self._delete_message(chat_id, message_id)
+                banned = await self._ban_user(chat_id, user_id)
+                if banned:
+                    self.stats['users_banned'] += 1
+                    ban_msg = f"🔨 <b>{user_name}</b> has been banned for sharing a story."
+                    await self._send_message(chat_id, ban_msg)
+                    # Report to admin
+                    if self.admin_chat_id:
+                        await self._send_message(
+                            self.admin_chat_id,
+                            f"📖 <b>Story Share - INSTANT BAN</b>\n\n"
+                            f"👤 User: {user_name} (@{username or 'N/A'})\n"
+                            f"🆔 ID: <code>{user_id}</code>\n"
+                            f"💬 Chat: <code>{chat_id}</code>\n"
+                            f"✅ Action: Instant Ban (Story shares are not allowed)"
+                        )
+                return
             
             # Check for forwarded messages (blocked for everyone except admins/VIP)
             # Note: forward_origin is the newer API field (Bot API 7.0+), forward_from/forward_date are legacy
