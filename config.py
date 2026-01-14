@@ -464,7 +464,7 @@ Please use /funding commands there! 📈"""
     # Gemini AI Integration (Free Tier)
     GEMINI_ENABLED = True
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-    GEMINI_MODEL = "gemini-1.5-flash"
+    GEMINI_MODEL = "gemini-2.5-flash"  # Updated: gemini-1.5-flash is deprecated
     GEMINI_RPM_LIMIT = 10  # Conservative limit (Free tier is usually 15-60 RPM depending on region)
     GEMINI_CONFIDENCE_THRESHOLD = 0.8  # Trust Gemini if it's 80% sure
     GEMINI_SCAN_THRESHOLD = 0.3  # Only scan messages that are already slightly suspicious (score > 0.3)
