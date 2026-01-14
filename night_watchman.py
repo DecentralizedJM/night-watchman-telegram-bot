@@ -2136,6 +2136,37 @@ I am a spam detection bot that protects Telegram groups from:
                 return True
         return False
     
+    async def _download_photo(self, file_id: str) -> Optional[bytes]:
+        """Download a photo from Telegram using file_id"""
+        try:
+            # First, get the file path from Telegram
+            url = f"https://api.telegram.org/bot{self.token}/getFile"
+            data = {'file_id': file_id}
+            response = await self.client.post(url, json=data, timeout=10.0)
+            result = response.json()
+            
+            if not result.get('ok'):
+                logger.error(f"Failed to get file info: {result.get('description')}")
+                return None
+            
+            file_path = result.get('result', {}).get('file_path')
+            if not file_path:
+                logger.error(f"No file_path in getFile response")
+                return None
+            
+            # Download the file
+            file_url = f"https://api.telegram.org/file/bot{self.token}/{file_path}"
+            file_response = await self.client.get(file_url, timeout=30.0)
+            
+            if file_response.status_code == 200:
+                return file_response.content
+            else:
+                logger.error(f"Failed to download file: HTTP {file_response.status_code}")
+                return None
+        except Exception as e:
+            logger.error(f"Error downloading photo: {e}")
+            return None
+    
     async def _delete_message(self, chat_id: int, message_id: int) -> bool:
         """Delete a message"""
         try:
@@ -3124,7 +3155,10 @@ No CAS ban record found."""
             if result.get('ok'):
                 return result.get('result', {})
             else:
-                logger.error(f"Error editing message: {result.get('description')}")
+                # Don't log error for "message to edit not found" - it's expected in some cases
+                error_desc = result.get('description', '')
+                if 'message to edit not found' not in error_desc.lower():
+                    logger.error(f"Error editing message: {error_desc}")
         except Exception as e:
             logger.error(f"Exception editing message: {e}")
         return {}  # Return empty dict on error

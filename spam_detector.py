@@ -237,7 +237,7 @@ class SpamDetector:
     
     async def analyze(self, message: str, user_id: int, user_join_date: Optional[datetime] = None,
                 entities: Optional[List] = None, user_rep: int = 0, 
-                is_first_message: bool = False) -> Dict:
+                is_first_message: bool = False, image_data: Optional[bytes] = None) -> Dict:
         """
         Analyze a message for spam indicators
         
@@ -248,6 +248,7 @@ class SpamDetector:
             entities: Telegram message entities (for detecting hyperlinks, etc.)
             user_rep: User's reputation points (0 = new/untrusted)
             is_first_message: True if this is user's first message in group
+            image_data: Optional image data (bytes) for image-based spam detection
         
         Returns:
             Dict with spam score, reasons, and recommended action

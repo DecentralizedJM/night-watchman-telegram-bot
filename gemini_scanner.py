@@ -1,6 +1,6 @@
 """
 Night Watchman - Google Gemini AI Integration
-Uses Gemini Pro (Free Tier) for advanced spam detection with rate limiting.
+Uses Gemini (new SDK) for advanced spam detection with rate limiting.
 """
 
 import os
@@ -17,44 +17,32 @@ from config import Config
 logger = logging.getLogger(__name__)
 
 try:
-    import google.generativeai as genai
-    from google.generativeai.types import HarmCategory, HarmBlockThreshold
+    from google import genai
     GEMINI_AVAILABLE = True
 except ImportError:
     GEMINI_AVAILABLE = False
-    logger.warning("google-generativeai not installed. Gemini scanner disabled.")
+    logger.warning("google-genai not installed. Gemini scanner disabled.")
 
 class GeminiScanner:
     """
-    Spam scanner using Google's Gemini LLM.
+    Spam scanner using Google's Gemini LLM (new SDK).
     Handles rate limiting to stay within free tier usage.
     """
     
     def __init__(self):
         self.config = Config()
         self.api_key = self.config.GEMINI_API_KEY
-        self.model_name = getattr(self.config, 'GEMINI_MODEL', 'gemini-pro')
+        self.model_name = getattr(self.config, 'GEMINI_MODEL', 'gemini-1.5-flash')
         self.rpm_limit = getattr(self.config, 'GEMINI_RPM_LIMIT', 10)
         self.enabled = getattr(self.config, 'GEMINI_ENABLED', False) and GEMINI_AVAILABLE
         
         # Rate limiting: Store timestamps of requests
         self._request_timestamps = deque()
-        self.model = None
+        self.client = None
         
         if self.enabled and self.api_key:
             try:
-                genai.configure(api_key=self.api_key)
-                self.model = genai.GenerativeModel(self.model_name)
-                
-                # Safety settings - allow content for analysis, don't block too aggressively
-                # We want to DETECT spam/harm, not have the API block the input
-                self.safety_settings = {
-                    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-                    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-                    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-                    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-                }
-                
+                self.client = genai.Client(api_key=self.api_key)
                 logger.info(f"✨ Gemini AI scanner initialized (Model: {self.model_name})")
             except Exception as e:
                 logger.error(f"Failed to initialize Gemini: {e}")
@@ -82,24 +70,27 @@ class GeminiScanner:
             
         return False
         
-    async def scan_message(self, text: str, user_context: str = "") -> Optional[Dict]:
+    async def scan_message(self, text: str, user_context: str = "", image_data: Optional[bytes] = None) -> Optional[Dict]:
         """
         Scan a message using Gemini.
         
         Args:
             text: Message text
             user_context: Additional context about user (e.g. "New user, joined 5 min ago")
+            image_data: Optional image data (bytes) for image-based spam detection
             
         Returns:
-            Dict with keys: is_spam (bool), confidence (float), reasoning (str)
+            Dict with keys: is_spam (bool), confidence (float), reasoning (str), reason (str)
             OR None if scan was skipped (rate limit, error, disabled)
         """
-        if not self.enabled or not self.model:
+        if not self.enabled or not self.client:
             return None
             
         if not text or len(text) < 10:
-            return None
-            
+            # If we have image data but no text, still scan
+            if not image_data:
+                return None
+        
         # Check rate limit
         if not self._check_rate_limit():
             logger.debug("⏳ Gemini rate limit reached. Skipping scan.")
@@ -122,25 +113,27 @@ Strictly identify:
 Input context: {user_context}
 
 Respond in JSON format ONLY:
-{
+{{
   "is_spam": boolean,
   "confidence": float (0.0 to 1.0),
   "category": "string (scam/casino/promo/safe/nsfw/other)",
   "reasoning": "short explanation"
-}
+}}
 """
-            prompt = f"{system_instruction}\n\nMessage: \"{text}\""
+            prompt = f"{system_instruction}\n\nMessage: \"{text}\"" if text else system_instruction
             
-            # Run in executor to avoid blocking event loop
+            # Prepare contents - text and/or image
+            contents = [prompt]
+            if image_data:
+                from google.genai import types
+                image_part = types.Part.from_bytes(data=image_data, mime_type="image/jpeg")
+                contents = [image_part, prompt]
+            
+            # Generate content using new API
             response = await asyncio.to_thread(
-                self.model.generate_content,
-                prompt,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=0.1,  # Low temperature for consistent classification
-                    top_p=0.8,
-                    top_k=40
-                ),
-                safety_settings=self.safety_settings
+                self.client.models.generate_content,
+                model=self.model_name,
+                contents=contents
             )
             
             result_text = response.text.strip()
@@ -158,7 +151,8 @@ Respond in JSON format ONLY:
             return {
                 'is_spam': data.get('is_spam', False),
                 'confidence': float(data.get('confidence', 0.0)),
-                'reasoning': data.get('reasoning', 'No reason provided')
+                'reasoning': data.get('reasoning', 'No reason provided'),
+                'reason': data.get('reasoning', 'No reason provided')  # Alias for compatibility
             }
             
         except json.JSONDecodeError as e:

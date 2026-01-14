@@ -22,7 +22,7 @@ async def extract_patterns_from_description(gemini_scanner, description: str) ->
     Returns:
         Dict with keywords, regex_patterns, and category or None if extraction failed
     """
-    if not gemini_scanner or not gemini_scanner.enabled:
+    if not gemini_scanner or not gemini_scanner.enabled or not gemini_scanner.client:
         return None
     
     prompt = f"""Extract spam detection patterns from this scam description:
@@ -51,22 +51,16 @@ Focus on extracting:
 """
     
     try:
-        # Use Gemini's generate_content directly
         import asyncio
-        from google import generativeai as genai
         
-        # Use the model from gemini_scanner instance
-        model = gemini_scanner.model
+        # Use the client from gemini_scanner instance
+        client = gemini_scanner.client
+        model_name = gemini_scanner.model_name
         
         response = await asyncio.to_thread(
-            model.generate_content,
-            prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.2,  # Low for consistent extraction
-                top_p=0.8,
-                top_k=40
-            ),
-            safety_settings=gemini_scanner.safety_settings
+            client.models.generate_content,
+            model=model_name,
+            contents=prompt
         )
         
         result_text = response.text.strip()
