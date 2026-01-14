@@ -32,7 +32,7 @@ class GeminiScanner:
     def __init__(self):
         self.config = Config()
         self.api_key = self.config.GEMINI_API_KEY
-        self.model_name = getattr(self.config, 'GEMINI_MODEL', 'gemini-2.5-flash')
+        self.model_name = getattr(self.config, 'GEMINI_MODEL', 'gemini-3-flash-preview')
         self.rpm_limit = getattr(self.config, 'GEMINI_RPM_LIMIT', 10)
         self.enabled = getattr(self.config, 'GEMINI_ENABLED', False) and GEMINI_AVAILABLE
         
