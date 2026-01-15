@@ -128,7 +128,7 @@ class Config:
         "reward received", "your reward has been", "reward has been successfully",  # NEW: Casino reward messages
         "congratulations!", "won $100", "won $200", "$100 instantly",  # NEW: Specific amounts (note: removed space after !)
         "promo code \"lucky", "enter promo code", "dont forget: enter promo",  # NEW: Promo code patterns
-        "start playing today", "cash out", "withdraw",  # NEW: Casino CTAs
+        "start playing today", "cash out",  # NEW: Casino CTAs (removed generic 'withdraw')
         # Scam patterns
         "dm me now", "inbox me", "message me now",
         # Recruitment scam instant ban patterns
@@ -266,12 +266,12 @@ class Config:
     CAS_API_URL = "https://api.cas.chat/check"  # CAS API endpoint
     
     # Media/Sticker Spam Detection
-    MEDIA_SPAM_DETECTION_ENABLED = True
+    MEDIA_SPAM_DETECTION_ENABLED = False  # Disabled as requested (was True)
     BLOCK_MEDIA_FROM_NEW_USERS = True  # Block photos/videos/stickers from new users
     MEDIA_NEW_USER_HOURS = 24  # Hours before new users can send media
     BLOCK_STICKERS_FROM_NEW_USERS = True  # Block stickers from new users
     BLOCK_GIFS_FROM_NEW_USERS = True  # Block GIFs/animations from new users
-    MAX_MEDIA_PER_MINUTE = 3  # Max media messages per user per minute (spam detection)
+    MAX_MEDIA_PER_MINUTE = 10  # Increased from 3 to 10 (campaign mode)
     MEDIA_SPAM_ACTION = "delete_and_warn"  # "delete", "delete_and_warn", "delete_and_mute"
     
     # Forward Message Handling

@@ -760,12 +760,13 @@ class SpamDetector:
         # Recruitment language
         recruitment_keywords = [
             'looking for', 'recruiting', 'recruitment', 'opening recruitment',
-            'join a project', 'join my team', 'putting together', 'team',
+            'join a project', 'join my team', 'putting together',
             'looking for people', 'looking for partners', 'looking for several',
             '2-3 people', 'two people', 'several people', 'responsible people',
             '2-3 individuals', 'seeking', 'urgently seeking', 'new online project',
             'cool project', 'join my team at', 'activities on bybit',
             'activities on binance', 'we\'re recruiting'
+            # REMOVED: 'team', 'join my team' (too generic)
         ]
         has_recruitment = any(kw in message_lower for kw in recruitment_keywords)
         
@@ -790,12 +791,13 @@ class SpamDetector:
         
         # Attention grabbers (suspicious)
         attention_patterns = [
-            'attention', '‼️', '❗', '⚡', '❗️', '✔', '✅'
+            'attention', '‼️', '❗', '⚡', '❗️', '✔'
         ]
         has_attention = any(kw in message for kw in attention_patterns)
         
         # Check for "legal" claims (often used by scammers to add legitimacy)
-        legal_keywords = ['legal', 'secure', 'legitimate', 'legit', 'safe', 'trusted']
+        # REMOVED: 'safe', 'secure', 'legit', 'trusted' to avoid flagging "wallet is safe"
+        legal_keywords = ['100% legal', '100% secure', 'completely legitimate', 'no risk', 'risk free']
         has_legal_claim = any(kw in message_lower for kw in legal_keywords)
         
         # SCORING: Need combination of signals to trigger
@@ -803,8 +805,11 @@ class SpamDetector:
         triggers = []
         
         if has_telegram_handle:
-            score += 1.5  # Increased - key scam indicator
-            triggers.append("telegram_handle")
+            # Only score handle if paired with other recruitment signals
+            if has_recruitment or has_earnings_claim or has_remote_keyword:
+                 score += 1.5 
+                 triggers.append("telegram_handle")
+        
         if has_earnings_claim:
             score += 2  # Strong signal
             triggers.append("earnings_claim")
@@ -821,10 +826,10 @@ class SpamDetector:
             score += 1
             triggers.append("easy_money_promise")
         if has_attention:
-            score += 1  # Increased from 0.5
+            score += 0.5  # Reduced from 1
             triggers.append("attention_grabber")
         if has_legal_claim:
-            score += 0.5  # "Legal" claims are suspicious in this context
+            score += 1.0  # Increased but with stricter keywords
             triggers.append("legal_claim")
         
         # Bonus: telegram handle + attention emojis + recruitment = very suspicious

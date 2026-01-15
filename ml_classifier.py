@@ -424,7 +424,7 @@ class SpamClassifier:
                 
                 # Retrain if we have enough new samples
                 if len(self.dataset["spam"]) % 10 == 0:
-                    self._train_model()
+                    self._train_models()
     
     def add_ham_sample(self, text: str):
         """Add a message to the ham (non-spam) training set."""

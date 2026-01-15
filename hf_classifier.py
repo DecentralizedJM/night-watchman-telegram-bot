@@ -26,7 +26,7 @@ class HuggingFaceClassifier:
         self.enabled = bool(self.api_key)
         
         # Using BART Large MNLI for zero-shot classification
-        self.api_url = "https://api-inference.huggingface.co/models/facebook/bart-large-mnli"
+        self.api_url = "https://router.huggingface.co/hf-inference/models/facebook/bart-large-mnli"
         
         # Candidate labels for classification
         self.spam_labels = [

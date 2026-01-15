@@ -86,7 +86,8 @@ class ReputationTracker:
                 'warnings': 0,
                 'valid_reports': 0,
                 'daily_points_earned': {},  # Track daily gains for abuse prevention
-                'last_report_credit': None  # Cooldown for report credits
+                'last_report_credit': None,  # Cooldown for report credits
+                'is_admin_enhanced': False   # IMMUNITY FLAG: Set by admin /enhance command
             }
     
     # ==================== Points Management ====================
@@ -259,8 +260,35 @@ class ReputationTracker:
             username, 
             first_name
         )
-        logger.info(f"⭐ Admin enhanced user {user_id} with +{self.config.REP_ADMIN_ENHANCEMENT} points")
+
+        # Mark as enhanced (Immunity from most bans)
+        key = self._get_user_key(user_id)
+        self.data['users'][key]['is_admin_enhanced'] = True
+        self._save_data()
+        
+        logger.info(f"⭐ Admin enhanced user {user_id} with +{self.config.REP_ADMIN_ENHANCEMENT} points (IMMUNITY GRANTED)")
         return points_awarded
+    
+    def is_immune(self, user_id: int) -> bool:
+        """
+        Check if user is immune to standard bans.
+        Immunity criteria:
+        1. Reputation > 10 points
+        2. OR Explicitly enhanced by admin (is_admin_enhanced=True)
+        """
+        key = self._get_user_key(user_id)
+        if key not in self.data['users']:
+            return False
+            
+        user_data = self.data['users'][key]
+        
+        # Check explicit enhancement
+        if user_data.get('is_admin_enhanced', False):
+            return True
+            
+        # Check points threshold
+        points = user_data.get('points', 0)
+        return points > 10
     
     # ==================== Level System ====================
     

@@ -22,6 +22,11 @@ from ticker_fetcher import ticker_fetcher, get_crypto_tickers
 from behavior_profiler import BehaviorProfiler
 from context_analyzer import ContextAnalyzer
 from adaptive_thresholds import AdaptiveThresholds
+# Import Decision Engine
+try:
+    from decision_engine import DecisionEngine
+except ImportError:
+    DecisionEngine = None
 
 load_dotenv()
 
@@ -108,6 +113,26 @@ class NightWatchman:
         self.behavior_profiler = BehaviorProfiler(data_dir) if self.config.BEHAVIOR_PROFILING_ENABLED else None
         self.context_analyzer = ContextAnalyzer() if self.config.CONTEXT_AWARE_MODERATION_ENABLED else None
         self.adaptive_thresholds = AdaptiveThresholds(data_dir) if self.config.ADAPTIVE_THRESHOLDS_ENABLED else None
+        
+        # Initialize Decision Engine
+        if DecisionEngine:
+            self.decision_engine = DecisionEngine(
+                history_size=getattr(self.config, 'DE_HISTORY_SIZE', 10),
+                max_users=getattr(self.config, 'DE_MAX_USERS', 5000)
+            )
+            logger.info("🧠 Decision Engine initialized")
+        else:
+            self.decision_engine = None
+        
+        # Initialize Decision Engine
+        if DecisionEngine:
+            self.decision_engine = DecisionEngine(
+                history_size=getattr(self.config, 'DE_HISTORY_SIZE', 10),
+                max_users=getattr(self.config, 'DE_MAX_USERS', 5000)
+            )
+            logger.info("🧠 Decision Engine initialized")
+        else:
+            self.decision_engine = None
         
         # Track chat member join dates
         self.member_join_dates: Dict[str, datetime] = {}  # f"{chat_id}_{user_id}" -> datetime
@@ -999,6 +1024,10 @@ class NightWatchman:
                 except Exception as e:
                     logger.error(f"Error processing photo: {e}")
 
+            # Track message for decision engine
+            if self.decision_engine:
+               self.decision_engine.track_message(user_id, text, result.get('spam_score', 0.0))
+
             # Track message for behavior profiling
             if self.behavior_profiler:
                 message_timestamp = datetime.fromtimestamp(message.get('date', 0), tz=timezone.utc) if message.get('date') else datetime.now(timezone.utc)
@@ -1060,18 +1089,18 @@ class NightWatchman:
             # REPUTATION CHECK: Higher reputation users get leniency
             is_high_rep = False
             if self.config.REPUTATION_ENABLED:
-                if self.reputation.is_trusted(user_id):
+                if self.reputation.is_immune(user_id):
                     is_high_rep = True
                     # Downgrade actions for trusted users
                     if result['action'] == 'delete_and_ban':
                         result['action'] = 'delete_and_warn'
-                        result['reasons'].append("(High Reputation: Ban avoided)")
+                        result['reasons'].append("(Immunity: Ban avoided)")
                     elif result['action'] == 'delete_and_warn':
                          # Only delete, don't warn trusted users immediately
                          # unless it's very severe (spam score > 0.9)
                         if result['spam_score'] < 0.9:
                             result['action'] = 'delete'
-                            result['reasons'].append("(High Reputation: Warning avoided)")
+                            result['reasons'].append("(Immunity: Warning avoided)")
 
             # Handle INSTANT BAN cases (porn, casino, aggressive DM, etc.)
             if result.get('instant_ban'):
@@ -2951,6 +2980,50 @@ No CAS ban record found."""
         elif 'telegram_bot_link' in triggers:
             ban_category = 'bot'
         
+        # IMMUNITY CHECK:
+        # High reputation users (>10 rep) or Admin Enhanced users are IMMUNE to most bans.
+        # They only get deleted + warned, NOT banned.
+        # EXCEPTION: "Very Severe" violations (Adult content, Bot links) bypass immunity.
+        
+        is_immune = False
+        if self.config.REPUTATION_ENABLED:
+            is_immune = self.reputation.is_immune(user_id)
+            
+        # Define "Very Severe" triggers that bypass immunity
+        very_severe_triggers = ['adult_content', 'telegram_bot_link']
+        is_very_severe = any(t in very_severe_triggers for t in triggers)
+        
+        if is_immune and not is_very_severe:
+            # SPARE THE USER
+            logger.info(f"🛡️ IMMUNITY APPLIED: User {user_name} (ID: {user_id}) spared from ban due to high reputation/enhancement.")
+            
+            # Learn from spam anyway
+            if text and len(text) > 10:
+                self.detector.learn_spam(text)
+                
+            # Send Warning instead of Ban
+            warn_msg = f"🛡️ <b>{user_name}</b>, your message was removed as spam.\n" \
+                       f"⚠️ High reputation saved you from a <b>BAN</b>. Please be careful!"
+            await self._send_message(chat_id, warn_msg)
+            
+            # Report to admin as "Spared"
+            if self.admin_chat_id:
+                forward_indicator = "📤 <b>(Forwarded)</b> " if is_forwarded else ""
+                report = f"""🛡️ <b>Ban Immunity Applied</b>
+{forward_indicator}
+👤 User: {user_name} (@{username or 'N/A'})
+🆔 User ID: <code>{user_id}</code>
+💬 Chat: <code>{chat_id}</code>
+⚠️ Triggers: {', '.join(triggers)}
+📋 Reasons: {', '.join(reasons)}
+
+📝 <b>Message:</b>
+<code>{text[:500]}</code>
+
+✅ <b>Action:</b> Message Deleted (Ban Spared)"""
+                await self._send_message(self.admin_chat_id, report)
+            return
+
         # Ban immediately
         banned = await self._ban_user(chat_id, user_id)
         if banned:
@@ -2997,7 +3070,26 @@ No CAS ban record found."""
             self.stats['messages_deleted'] += 1
         
         # Ban immediately if configured
+        # Ban immediately if configured (AND not immune)
         if self.config.AUTO_BAN_NON_INDIAN_SPAM:
+            # Check immunity
+            is_immune = False
+            if self.config.REPUTATION_ENABLED:
+                is_immune = self.reputation.is_immune(user_id)
+            
+            if is_immune:
+                logger.info(f"🛡️ IMMUNITY APPLIED: User {user_name} spared from non-Indian language ban.")
+                await self._send_message(
+                    chat_id,
+                    f"⚠️ <b>{user_name}</b>, non-Indian languages are not allowed here."
+                )
+                # Report to admin as spared
+                if self.admin_chat_id:
+                     safe_user_name = html_escape(user_name)
+                     report = f"🛡️ <b>Ban Immunity Applied (Language)</b>\nUser: {safe_user_name}\nLanguage: {detected_lang}\nAction: Deleted Only"
+                     await self._send_message(self.admin_chat_id, report)
+                return
+
             banned = await self._ban_user(chat_id, user_id)
             if banned:
                 self.stats['users_banned'] += 1
@@ -3066,6 +3158,29 @@ No CAS ban record found."""
     
     async def _ban_user(self, chat_id: int, user_id: int) -> bool:
         """Ban a user"""
+        
+        # DECISION ENGINE CHECK:
+        # Before banning, check if user history warrants leniency
+        if self.decision_engine:
+            # Determine violation type based on context (not passed explicitly so infer)
+            violation_type = "generic"
+            
+            # Consult decision engine
+            final_action, reason = self.decision_engine.make_decision(user_id, 'ban', violation_type)
+            
+            if final_action != 'ban':
+                logger.info(f"⚖️ Decision Engine modified action for {user_id}: {reason}")
+                
+                if final_action == 'delete_and_warn':
+                     await self._send_message(
+                        chat_id,
+                        f"⚠️ User {user_id}, your message was flagged but you were spared from a ban based on your history. Please be careful."
+                    )
+                     return False # Do not proceed with ban
+                
+                if final_action == 'none':
+                    return False
+
         try:
             url = f"https://api.telegram.org/bot{self.token}/banChatMember"
             data = {
@@ -3157,7 +3272,10 @@ No CAS ban record found."""
             else:
                 # Don't log error for "message to edit not found" - it's expected in some cases
                 error_desc = result.get('description', '')
-                if 'message to edit not found' not in error_desc.lower():
+                if 'message to delete not found' in error_desc.lower() or 'message to edit not found' in error_desc.lower():
+                    # Expected race condition, ignore
+                    pass
+                else:
                     logger.error(f"Error editing message: {error_desc}")
         except Exception as e:
             logger.error(f"Exception editing message: {e}")
