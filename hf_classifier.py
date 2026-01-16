@@ -86,6 +86,17 @@ class HuggingFaceClassifier:
             if response.status_code == 200:
                 result = response.json()
                 
+                # Handle list response (sometimes returned by HF API)
+                if isinstance(result, list):
+                    if not result:
+                        return None
+                    # If it's a list, the first item is usually the result dict
+                    result = result[0]
+                    # Check if we still have a dict
+                    if not isinstance(result, dict):
+                        logger.warning(f"Unexpected HF response format inside list: {type(result)}")
+                        return None
+                
                 # Parse response
                 labels = result.get('labels', [])
                 scores = result.get('scores', [])
