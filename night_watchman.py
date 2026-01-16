@@ -124,16 +124,6 @@ class NightWatchman:
         else:
             self.decision_engine = None
         
-        # Initialize Decision Engine
-        if DecisionEngine:
-            self.decision_engine = DecisionEngine(
-                history_size=getattr(self.config, 'DE_HISTORY_SIZE', 10),
-                max_users=getattr(self.config, 'DE_MAX_USERS', 5000)
-            )
-            logger.info("🧠 Decision Engine initialized")
-        else:
-            self.decision_engine = None
-        
         # Track chat member join dates
         self.member_join_dates: Dict[str, datetime] = {}  # f"{chat_id}_{user_id}" -> datetime
         
@@ -317,6 +307,14 @@ class NightWatchman:
             keep_count = self.ENHANCED_MESSAGES_MAX_SIZE // 2
             self.enhanced_messages = dict(list(self.enhanced_messages.items())[-keep_count:])
             logger.info(f"🧹 Cleaned enhanced_messages cache: kept {keep_count} entries")
+            cleaned = True
+        
+        # 2.5. Cleanup enhanced_users (keep only recent entries)
+        if len(self.enhanced_users) > self.ENHANCED_USERS_MAX_SIZE:
+            keep_count = self.ENHANCED_USERS_MAX_SIZE // 2
+            user_list = list(self.enhanced_users.items())
+            self.enhanced_users = dict(user_list[-keep_count:])
+            logger.info(f"🧹 Cleaned enhanced_users cache: kept {keep_count} entries")
             cleaned = True
         
         # 3. Cleanup report_cooldowns (remove expired entries)
@@ -3006,25 +3004,6 @@ No CAS ban record found."""
         if is_forwarded:
             triggers = ['forwarded_spam'] + triggers
         
-        # Check if USER was enhanced by admin (skip ban if user is enhanced)
-        is_user_enhanced = user_id in self.enhanced_users
-        
-        # Check user reputation
-        user_rep = 0
-        if self.config.REPUTATION_ENABLED:
-            user_rep_data = self.reputation.get_user_rep(user_id)
-            user_rep = user_rep_data.get('points', 0)
-        
-        # Skip ban if USER was enhanced by admin OR user has > 10 rep
-        if is_user_enhanced:
-            logger.info(f"🛡️ User {user_name} (ID: {user_id}) was enhanced by admin, skipping instant ban")
-            await self._delete_message(chat_id, message_id)
-            return
-        elif user_rep > 10:
-            logger.info(f"🛡️ User {user_name} has high reputation ({user_rep}), skipping instant ban")
-            await self._delete_message(chat_id, message_id)
-            return
-        
         logger.warning(f"🚨 INSTANT BAN triggered for {user_name} (@{username}): {reasons} (forwarded={is_forwarded})")
         
         # Delete the message
@@ -3047,7 +3026,7 @@ No CAS ban record found."""
         # They only get deleted + warned, NOT banned.
         # EXCEPTION: "Very Severe" violations (Adult content, Bot links) bypass immunity.
         
-        # Check if USER was enhanced by admin (skip ban if user is enhanced)
+        # Check if USER was enhanced by admin
         is_user_enhanced = user_id in self.enhanced_users
         
         # Check user reputation
