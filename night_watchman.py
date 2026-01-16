@@ -1028,10 +1028,6 @@ class NightWatchman:
                 except Exception as e:
                     logger.error(f"Error processing photo: {e}")
 
-            # Track message for decision engine
-            if self.decision_engine:
-               self.decision_engine.track_message(user_id, text, result.get('spam_score', 0.0))
-
             # Track message for behavior profiling
             if self.behavior_profiler:
                 message_timestamp = datetime.fromtimestamp(message.get('date', 0), tz=timezone.utc) if message.get('date') else datetime.now(timezone.utc)
@@ -1048,6 +1044,10 @@ class NightWatchman:
                 user_rep=user_rep, is_first_message=is_first_message,
                 image_data=image_data
             )
+
+            # Track message for decision engine (needs analysis result)
+            if self.decision_engine:
+                self.decision_engine.track_message(user_id, text, result.get('spam_score', 0.0))
             
             original_spam_score = result['spam_score']
             
@@ -3325,7 +3325,7 @@ No CAS ban record found."""
                 
                 return result  # Return full response
             else:
-                logger.error(f"Error sending message: {response_data.get('description')}")
+                logger.error(f"Error sending message: {result.get('description')}")
         except Exception as e:
             logger.error(f"Error sending message: {e}")
         return {}  # Return empty dict on error
