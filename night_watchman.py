@@ -163,6 +163,10 @@ class NightWatchman:
         self.enhanced_messages: Dict[str, bool] = {}  # f"{chat_id}_{message_id}" -> True
         self.ENHANCED_MESSAGES_MAX_SIZE = 2000  # Max entries before cleanup
         
+        # Track USERS who have been enhanced by admins (protect from bans)
+        self.enhanced_users: Dict[int, bool] = {}  # user_id -> True
+        self.ENHANCED_USERS_MAX_SIZE = 10000  # Max entries before cleanup
+        
         # Last cleanup timestamp
         self._last_cleanup = datetime.now(timezone.utc)
         self.CLEANUP_INTERVAL_MINUTES = 30  # Run cleanup every 30 minutes
@@ -1086,24 +1090,36 @@ class NightWatchman:
                     result['action'] = 'none'
                     result['is_spam'] = False
             
-            # REPUTATION CHECK: Higher reputation users get leniency
+            # REPUTATION CHECK: Users with > 10 reputation get leniency
             is_high_rep = False
-            if self.config.REPUTATION_ENABLED:
-                if self.reputation.is_immune(user_id):
-                    is_high_rep = True
-                    # Downgrade actions for trusted users
-                    if result['action'] == 'delete_and_ban':
-                        result['action'] = 'delete_and_warn'
-                        result['reasons'].append("(Immunity: Ban avoided)")
-                    elif result['action'] == 'delete_and_warn':
-                         # Only delete, don't warn trusted users immediately
-                         # unless it's very severe (spam score > 0.9)
-                        if result['spam_score'] < 0.9:
-                            result['action'] = 'delete'
-                            result['reasons'].append("(Immunity: Warning avoided)")
+            if self.config.REPUTATION_ENABLED and user_rep > 10:
+                is_high_rep = True
+                # Downgrade actions for high rep users (but still delete spam)
+                if result['action'] == 'delete_and_ban':
+                    result['action'] = 'delete_and_warn'
+                    result['reasons'].append("(High Reputation: Ban avoided)")
+                elif result['action'] == 'delete_and_warn':
+                     # Only delete, don't warn high rep users immediately
+                     # unless it's very severe (spam score > 0.9)
+                    if result['spam_score'] < 0.9:
+                        result['action'] = 'delete'
+                        result['reasons'].append("(High Reputation: Warning avoided)")
 
+            # Check if USER was enhanced by admin (skip ban if user is enhanced)
+            is_user_enhanced = user_id in self.enhanced_users
+            
             # Handle INSTANT BAN cases (porn, casino, aggressive DM, etc.)
             if result.get('instant_ban'):
+                # Skip ban if USER was enhanced by admin OR user has > 10 rep
+                if is_user_enhanced:
+                    logger.info(f"🛡️ User {user_name} (ID: {user_id}) was enhanced by admin, skipping instant ban")
+                    await self._delete_message(chat_id, message_id)
+                    return
+                elif is_high_rep:
+                    logger.info(f"🛡️ User {user_name} has high reputation ({user_rep}), skipping instant ban")
+                    await self._delete_message(chat_id, message_id)
+                    return
+                
                 await self._handle_instant_ban(
                     chat_id=chat_id,
                     message_id=message_id,
@@ -1117,9 +1133,20 @@ class NightWatchman:
             
             # Handle non-Indian language spam (with or without URLs)
             if result.get('non_indian_language'):
-                # Bypass for high rep users
-                if is_high_rep:
-                     logger.info(f"🛡️ High reputation user {user_name} used non-Indian language, sparing ban.")
+                # Check if USER was enhanced by admin
+                is_user_enhanced = user_id in self.enhanced_users
+                
+                # Bypass ban for enhanced users OR users with > 10 rep
+                if is_user_enhanced:
+                    logger.info(f"🛡️ User {user_name} (ID: {user_id}) was enhanced by admin, skipping non-Indian language ban")
+                    await self._delete_message(chat_id, message_id)
+                    await self._send_message(
+                        chat_id,
+                        f"⚠️ <b>{user_name}</b>, non-Indian languages are not allowed here."
+                    )
+                    return
+                elif is_high_rep:
+                     logger.info(f"🛡️ High reputation user {user_name} (rep: {user_rep}) used non-Indian language, sparing ban.")
                      # Just delete, don't ban
                      await self._delete_message(chat_id, message_id)
                      await self._send_message(
@@ -1161,6 +1188,19 @@ class NightWatchman:
                 return
             
             if result['is_spam']:
+                # Check if USER was enhanced by admin (skip ban if user is enhanced)
+                is_user_enhanced = user_id in self.enhanced_users
+                
+                # Skip ban for enhanced users OR users with > 10 rep
+                if is_user_enhanced and result['action'] in ['delete_and_ban', 'delete_and_warn']:
+                    logger.info(f"🛡️ User {user_name} (ID: {user_id}) was enhanced by admin, skipping spam ban")
+                    await self._delete_message(chat_id, message_id)
+                    return
+                elif is_high_rep and result['action'] == 'delete_and_ban':
+                    logger.info(f"🛡️ User {user_name} has high reputation ({user_rep}), skipping spam ban")
+                    await self._delete_message(chat_id, message_id)
+                    return
+                
                 # Handle special mute_24h action from spam detector
                 if result.get('action') == 'mute_24h':
                      logger.warning(f"🔇 Immediate mute for {user_name} due to disallowed link")
@@ -1264,7 +1304,10 @@ class NightWatchman:
             # Mark message as enhanced (prevent duplicate enhancements)
             self.enhanced_messages[message_key] = True
             
-            logger.info(f"⭐ Admin {reactor_id} enhanced message {message_id} by user {message_author_id} (+15 points)")
+            # Mark USER as enhanced (protect from bans)
+            self.enhanced_users[message_author_id] = True
+            
+            logger.info(f"⭐ Admin {reactor_id} enhanced message {message_id} by user {message_author_id} (+15 points, user protected from bans)")
                 
         except Exception as e:
             logger.error(f"Error handling message reaction: {e}", exc_info=True)
@@ -2963,6 +3006,25 @@ No CAS ban record found."""
         if is_forwarded:
             triggers = ['forwarded_spam'] + triggers
         
+        # Check if USER was enhanced by admin (skip ban if user is enhanced)
+        is_user_enhanced = user_id in self.enhanced_users
+        
+        # Check user reputation
+        user_rep = 0
+        if self.config.REPUTATION_ENABLED:
+            user_rep_data = self.reputation.get_user_rep(user_id)
+            user_rep = user_rep_data.get('points', 0)
+        
+        # Skip ban if USER was enhanced by admin OR user has > 10 rep
+        if is_user_enhanced:
+            logger.info(f"🛡️ User {user_name} (ID: {user_id}) was enhanced by admin, skipping instant ban")
+            await self._delete_message(chat_id, message_id)
+            return
+        elif user_rep > 10:
+            logger.info(f"🛡️ User {user_name} has high reputation ({user_rep}), skipping instant ban")
+            await self._delete_message(chat_id, message_id)
+            return
+        
         logger.warning(f"🚨 INSTANT BAN triggered for {user_name} (@{username}): {reasons} (forwarded={is_forwarded})")
         
         # Delete the message
@@ -2985,15 +3047,21 @@ No CAS ban record found."""
         # They only get deleted + warned, NOT banned.
         # EXCEPTION: "Very Severe" violations (Adult content, Bot links) bypass immunity.
         
-        is_immune = False
+        # Check if USER was enhanced by admin (skip ban if user is enhanced)
+        is_user_enhanced = user_id in self.enhanced_users
+        
+        # Check user reputation
+        user_rep = 0
         if self.config.REPUTATION_ENABLED:
-            is_immune = self.reputation.is_immune(user_id)
-            
+            user_rep_data = self.reputation.get_user_rep(user_id)
+            user_rep = user_rep_data.get('points', 0)
+        
         # Define "Very Severe" triggers that bypass immunity
         very_severe_triggers = ['adult_content', 'telegram_bot_link']
         is_very_severe = any(t in very_severe_triggers for t in triggers)
         
-        if is_immune and not is_very_severe:
+        # Skip ban if USER was enhanced by admin OR user has > 10 rep (unless very severe)
+        if (is_user_enhanced or user_rep > 10) and not is_very_severe:
             # SPARE THE USER
             logger.info(f"🛡️ IMMUNITY APPLIED: User {user_name} (ID: {user_id}) spared from ban due to high reputation/enhancement.")
             
@@ -3070,25 +3138,33 @@ No CAS ban record found."""
             self.stats['messages_deleted'] += 1
         
         # Ban immediately if configured
-        # Ban immediately if configured (AND not immune)
+        # Check if USER was enhanced by admin (skip ban if user is enhanced)
+        is_user_enhanced = user_id in self.enhanced_users
+        
+        # Check user reputation
+        user_rep = 0
+        if self.config.REPUTATION_ENABLED:
+            user_rep_data = self.reputation.get_user_rep(user_id)
+            user_rep = user_rep_data.get('points', 0)
+        
+        # Skip ban if USER was enhanced by admin OR user has > 10 rep
+        if is_user_enhanced:
+            logger.info(f"🛡️ User {user_name} (ID: {user_id}) was enhanced by admin, skipping non-Indian language ban")
+            await self._send_message(
+                chat_id,
+                f"⚠️ <b>{user_name}</b>, non-Indian languages are not allowed here."
+            )
+            return
+        elif user_rep > 10:
+            logger.info(f"🛡️ User {user_name} has high reputation ({user_rep}), skipping non-Indian language ban")
+            await self._send_message(
+                chat_id,
+                f"⚠️ <b>{user_name}</b>, non-Indian languages are not allowed here."
+            )
+            return
+        
+        # Ban immediately if configured
         if self.config.AUTO_BAN_NON_INDIAN_SPAM:
-            # Check immunity
-            is_immune = False
-            if self.config.REPUTATION_ENABLED:
-                is_immune = self.reputation.is_immune(user_id)
-            
-            if is_immune:
-                logger.info(f"🛡️ IMMUNITY APPLIED: User {user_name} spared from non-Indian language ban.")
-                await self._send_message(
-                    chat_id,
-                    f"⚠️ <b>{user_name}</b>, non-Indian languages are not allowed here."
-                )
-                # Report to admin as spared
-                if self.admin_chat_id:
-                     safe_user_name = html_escape(user_name)
-                     report = f"🛡️ <b>Ban Immunity Applied (Language)</b>\nUser: {safe_user_name}\nLanguage: {detected_lang}\nAction: Deleted Only"
-                     await self._send_message(self.admin_chat_id, report)
-                return
 
             banned = await self._ban_user(chat_id, user_id)
             if banned:

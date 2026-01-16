@@ -626,8 +626,25 @@ class SpamDetector:
                 return result
         
         # 4. Aggressive DM patterns (instant ban)
-        dm_patterns = ['dm me now', 'inbox me', 'message me now', 'dm me', 
-                       'aaja inbox', 'inbox karo', 'dm kar', 'dm karo']
+        dm_patterns = [
+            # Direct DM requests
+            'dm me now', 'inbox me', 'message me now', 'dm me', 
+            'aaja inbox', 'inbox karo', 'dm kar', 'dm karo',
+            # Bio/link references (common in scams)
+            'check bio', 'link in bio', 'bio link', 'see bio', 'check my bio',
+            'link in my bio', 'link in the bio', 'see my bio',
+            # Contact/reach out patterns
+            'reach out', 'reach out to me', 'reach out now', 'contact me',
+            'contact me now', 'get in touch', 'hit me up', 'slide into',
+            'drop a dm', 'send a dm', 'private message', 'pm me',
+            # Hindi/Hinglish variants
+            'inbox me aao', 'message karo', 'contact karo', 'dm kijiye',
+            # Scam-specific patterns
+            'want to learn more? message', 'want to know more? dm',
+            'interested? dm', 'if interested, message', 'if interested, dm',
+            'details in dm', 'details in pm', 'details in private',
+            'write to me', 'write me', 'write now', 'write to me at'
+        ]
         for pattern in dm_patterns:
             if pattern in message_lower or pattern in message_normalized:
                 result['instant_ban'] = True
@@ -760,24 +777,35 @@ class SpamDetector:
         # Recruitment language
         recruitment_keywords = [
             'looking for', 'recruiting', 'recruitment', 'opening recruitment',
+            'recruitment for', 'recruitment is open', 'recruitment open',
             'join a project', 'join my team', 'putting together',
             'looking for people', 'looking for partners', 'looking for several',
             '2-3 people', 'two people', 'several people', 'responsible people',
             '2-3 individuals', 'seeking', 'urgently seeking', 'new online project',
             'cool project', 'join my team at', 'activities on bybit',
-            'activities on binance', 'we\'re recruiting'
-            # REMOVED: 'team', 'join my team' (too generic)
+            'activities on binance', 'we\'re recruiting',
+            # New patterns from examples
+            'online assistants', 'online assistant', 'assistants needed',
+            'hiring assistants', 'looking for assistants', 'assistant position',
+            'work as assistant', 'become an assistant'
         ]
         has_recruitment = any(kw in message_lower for kw in recruitment_keywords)
         
-        # DM request patterns
+        # DM request patterns (including variations with dashes, colons, etc.)
         dm_patterns = [
             'write to', 'message me', 'dm me', 'private message',
             'send me a', 'contact me', 'write "+"', "write '+'", 'leave a "+"',
             'write +', 'leave +', 'interested, message', 'if interested',
             'details:', 'details -', 'want to join', 'details in pm',
             'details in dm', 'write now', 'write to me at', 'send me a private',
-            'pm -', 'dm -', 'pm:', 'write me'
+            'pm -', 'dm -', 'pm:', 'write me',
+            # New patterns from examples (with dashes, colons)
+            'message —', 'message -', 'dm —', 'dm -', 'contact —', 'contact -',
+            'message:', 'dm:', 'contact:', 'reach out —', 'reach out -',
+            'join my telegram', 'join my telegram channel', 'join telegram',
+            'dm me or join', 'message me or join', 'contact me or join',
+            'want to learn more? message', 'want to know more? dm',
+            'if you want to', 'if you want to understand', 'if you want to apply'
         ]
         has_dm_request = any(kw in message_lower for kw in dm_patterns)
         
@@ -785,7 +813,13 @@ class SpamDetector:
         easy_work_patterns = [
             'simple tasks', 'clear instructions', 'easy', '1-2 hours',
             '1.5-2 hours', 'hours per day', 'full training', 'training and support',
-            'we provide', 'daily payments', 'transparent'
+            'we provide', 'daily payments', 'transparent',
+            # New patterns from examples
+            'training from scratch', 'from scratch', 'ongoing support',
+            'only 1-2 hours', 'only 1.5-2 hours', 'just 1-2 hours',
+            'all you need is', 'willingness to take action',
+            'internet access', 'only need', 'no experience needed',
+            'no experience required', 'beginners welcome'
         ]
         has_easy_promise = any(kw in message_lower for kw in easy_work_patterns)
         
