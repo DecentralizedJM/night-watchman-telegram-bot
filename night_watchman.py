@@ -2106,6 +2106,7 @@ I am a spam detection bot that protects Telegram groups from:
         patterns = None
         
         # Try to extract patterns using Gemini
+        extraction_status = "Skipped (Scanner disabled)"
         if self.detector.gemini_scanner and self.detector.gemini_scanner.enabled:
             try:
                 from pattern_extractor import extract_patterns_from_description, validate_and_sanitize_patterns
@@ -2119,13 +2120,20 @@ I am a spam detection bot that protects Telegram groups from:
                     # Validate and sanitize  
                     patterns = validate_and_sanitize_patterns(patterns)
                     logger.info(f"✅ Extracted patterns: {patterns}")
+                    extraction_status = "Success"
                 else:
                     logger.warning("Failed to extract patterns from description")
+                    extraction_status = "Failed (No patterns found)"
                     
+            except ImportError as e:
+                logger.error(f"Pattern extractor import error: {e}")
+                extraction_status = "Failed (Missing module)"
             except Exception as e:
                 logger.error(f"Pattern extraction error: {e}")
+                extraction_status = f"Failed ({str(e)[:50]})"
         
         # Add to ML training data (always, even if pattern extraction failed)
+        ml_status = "Skipped (ML disabled)"
         try:
             # Add the description itself as a spam example
             if hasattr(self.detector, 'ml_classifier') and self.detector.ml_classifier:
@@ -2136,10 +2144,13 @@ I am a spam detection bot that protects Telegram groups from:
                 logger.info(f"🔄 Retraining ML model...")
                 await asyncio.to_thread(self.detector.ml_classifier.retrain)
                 logger.info(f"✅ ML model retrained")
+                ml_status = "Success (Retrained)"
             else:
                 logger.warning("ML classifier not available")
+                ml_status = "Failed (Classifier not initialized)"
         except Exception as e:
             logger.error(f"ML training error: {e}")
+            ml_status = f"Failed ({str(e)[:50]})"
         
         # Build response message with tough ex-marine personality
         response = "✅ <b>Intel received and processed.</b>\n\n"
@@ -2153,8 +2164,11 @@ I am a spam detection bot that protects Telegram groups from:
             
             if patterns['regex_patterns']:
                 response += f"🔍 <b>Signatures extracted:</b> {len(patterns['regex_patterns'])} detection patterns\n\n"
+        else:
+            response += f"⚠️ <b>Pattern Extraction:</b> {extraction_status}\n"
+            response += "<i>(Using raw text for ML training only)</i>\n\n"
         
-        response += "🧠 <b>Updated my threat database.</b> I'm trained and ready.\n\n"
+        response += f"🧠 <b>ML Training:</b> {ml_status}\n\n"
         response += "💪 Next time these punks show up, I'll catch 'em instantly. No one gets past me twice."
         
         # Update the acknowledgement message with results

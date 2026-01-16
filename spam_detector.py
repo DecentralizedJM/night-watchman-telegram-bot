@@ -732,6 +732,12 @@ class SpamDetector:
             result['triggers'].append("signup_url")
             return result
 
+        # 8.5. TESTIMONIAL/GURU SCAM DETECTION
+        # Shoutouts to "mentors" or "traders" are increasingly common
+        testimonial_result = self._check_testimonial_scam(message, message_lower)
+        if testimonial_result['instant_ban']:
+             return testimonial_result
+             
         # 9. FLEXIBLE SCAM PATTERN DETECTION (regex/partial phrase)
         flexible_scam_result = self._check_flexible_scam_patterns(message, message_lower)
         if flexible_scam_result['instant_ban']:
@@ -877,6 +883,76 @@ class SpamDetector:
             result['reasons'].append(f"Recruitment scam detected (score: {score})")
             result['triggers'] = triggers
         
+        return result
+
+    def _check_testimonial_scam(self, message: str, message_lower: str) -> Dict:
+        """
+        Detect testimonial/shoutout scams (Guru scams).
+        Pattern: Praise for a specific person + financial success claims + recommendation.
+        """
+        result = {'instant_ban': False, 'reasons': [], 'triggers': []}
+        
+        # 1. The Shoutout/Praise
+        shoutout_patterns = [
+            r'shoutout to @[\w_]+',
+            r'huge shoutout to',
+            r'thanks to @[\w_]+',
+            r'big thanks to',
+            r'all thanks to',
+            r'appreciation post for',
+            r'recommend @[\w_]+',
+            r'highly recommend',
+            r'god bless you',
+            r'forever grateful to',
+            r'transformed my',
+            r'changed my life'
+        ]
+        has_shoutout = any(re.search(p, message_lower) for p in shoutout_patterns)
+        
+        # 2. Financial Success Claims
+        success_patterns = [
+            r'financial life',
+            r'financial situation',
+            r'raking in commission',
+            r'making profit',
+            r'account is thriving',
+            r'earned way more',
+            r'profit of',
+            r'successful withdrawal',
+            r'investment strategies',
+            r'trading strategies',
+            r'stocks trading',
+            r'crypto trading',
+            r'binary options',
+            r'forex trading'
+        ]
+        has_success = any(re.search(p, message_lower) for p in success_patterns)
+        
+        # 3. Guru/Mentor signals
+        guru_patterns = [
+            r'mentor', 'coach', 'expert', 'guidance', 'strategies', 
+            'signals', 'platform', 'manager'
+        ]
+        has_guru = any(kw in message_lower for kw in guru_patterns)
+        
+        # 4. Handle check (Must mention a handle)
+        has_handle = bool(re.search(r'@[a-zA-Z][a-zA-Z0-9_]{4,}', message))
+        
+        # LOGIC: Shoutout + Success + (Guru OR Handle) = BAN
+        if has_shoutout and has_success:
+            if has_guru or has_handle:
+                result['instant_ban'] = True
+                result['reasons'].append("Testimonial/Guru scam detected")
+                result['triggers'].append("testimonial_scam")
+                return result
+                
+        # LOGIC: "Raking in commissions" is specific enough on its own
+        if 'raking in commission' in message_lower:
+            result['instant_ban'] = True
+            result['reasons'].append("Commission scam phrase detected")
+            result['triggers'].append("commission_scam")
+            return result
+            
         return result
 
     def _check_money_emojis(self, message: str, user_id: int, 
