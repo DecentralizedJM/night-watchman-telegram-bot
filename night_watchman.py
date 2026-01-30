@@ -721,6 +721,13 @@ class NightWatchman:
             
             self.stats['messages_checked'] += 1
             
+            # PnL topic bypass: never delete any image in this topic (Mudrex PnL screenshots)
+            message_thread_id = message.get('message_thread_id')
+            pnl_topic_id = getattr(self.config, 'PNL_TOPIC_ID', None)
+            if pnl_topic_id is not None and message_thread_id == pnl_topic_id and message.get('photo'):
+                logger.info(f"📷 PnL topic bypass: allowing image in topic {pnl_topic_id} (no deletion)")
+                return
+            
             # Track message in analytics and reputation (daily activity)
             if self.config.ANALYTICS_ENABLED:
                 self.analytics.track_message(user_id, chat_id)

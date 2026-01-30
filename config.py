@@ -443,6 +443,9 @@ class Config:
     FUNDING_ALERTS_TOPIC_NAME = "Futures Funding Alerts"
     FUNDING_ALERTS_TOPIC_LINK = "https://t.me/officialmudrex/96073"
     
+    # PnL topic: never delete any image posted here (Mudrex PnL screenshots by anyone)
+    PNL_TOPIC_ID = int(os.getenv("PNL_TOPIC_ID", "103380"))  # https://t.me/officialmudrex/103380
+    
     # Message to show when redirecting crypto commands
     CRYPTO_COMMAND_REDIRECT_MESSAGE = """💡 <b>Wrong topic!</b>
 
