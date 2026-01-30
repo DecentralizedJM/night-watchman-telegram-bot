@@ -271,6 +271,9 @@ class SpamDetector:
             'instant_ban': False
         }
         
+        # Image-only messages (no caption): run pipeline so GPT image scan can run
+        if not message and image_data:
+            message = "[Image only - no caption]"
         if not message:
             return result
         

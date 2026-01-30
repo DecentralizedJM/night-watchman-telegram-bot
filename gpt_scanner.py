@@ -111,6 +111,12 @@ Strictly identify:
 - Unsolicited promotion/ads
 - NSFW/Adult content
 
+IMAGE ANALYSIS (when an image is attached):
+- Read ALL text in the image in ANY language (English, Chinese, etc.). Use OCR-style understanding.
+- Flag scam content in images: betting/gambling (e.g. 足球红单, 天天收米, 日赚3千, "earn daily", "click avatar", "DM me to join")
+- Flag "DM me" / "private message me" / "click avatar to join group" call-to-actions in images.
+- NON-MUDREX SCREENSHOTS: If the image is a screenshot of an app (trading app, betting app, wallet, exchange UI), determine if it is from Mudrex or from another product. Screenshots that are NOT from Mudrex (other exchanges, betting apps, random UIs) shared in this Mudrex community are suspicious and should be flagged as scam/promo unless clearly educational.
+
 Input context: {user_context}
 
 Respond in JSON format ONLY:
@@ -122,8 +128,10 @@ Respond in JSON format ONLY:
 }}
 """
             user_content = system_instruction.format(user_context=user_context or "None")
-            if text:
+            if text and len((text or "").strip()) >= 10:
                 user_content += f'\n\nMessage: "{text}"'
+            elif image_data:
+                user_content += '\n\nMessage: [Image only - analyze the attached image for spam, scam, betting/gambling in any language, or non-Mudrex app screenshots.]'
 
             content_parts = [{"type": "text", "text": user_content}]
             if image_data:
