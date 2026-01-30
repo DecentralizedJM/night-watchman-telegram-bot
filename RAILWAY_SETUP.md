@@ -1,29 +1,35 @@
 # Railway Deployment Setup for Night Watchman
 
-To enable the GPT AI spam scanning on Railway, add your OpenAI API key as an environment variable.
+## Required: Redis
 
-## Step Using Railway Dashboard:
+Redis is **required** for immunity storage, GPT API rate limiting, and state. Add Redis to your Railway project:
 
-1. Go to your **Railway Project**.
-2. Select the **Night Watchman** service.
-3. Go to the **Variables** tab.
-4. Click **New Variable**.
-5. Add the following variable:
+1. In your Railway project, click **New** → **Database** → **Redis**
+2. After Redis is provisioned, go to the Redis service → **Variables**
+3. Copy the `REDIS_URL` (e.g. `redis://default:xxx@host:port`)
+4. In your **Night Watchman** service → **Variables**, add:
+   - **Variable Name:** `REDIS_URL`
+   - **Value:** `${{Redis.REDIS_URL}}` (Railway reference) or paste the full URL
+
+Without Redis, GPT rate limiting is per-instance only and immunity does not persist across restarts.
+
+## GPT AI Spam Scanning
+
+1. Go to your **Railway Project** → **Night Watchman** service → **Variables**
+2. Add:
    - **Variable Name:** `OPENAI_API_KEY`
-   - **Value:** Paste your API key from [OpenAI Platform](https://platform.openai.com/api-keys)
+   - **Value:** Your API key from [OpenAI Platform](https://platform.openai.com/api-keys)
 
 ## Optional Configuration
 
-You can also adjust these variables if needed:
-
-- `GPT_ENABLED`: Set to `true` (default) or `false`.
-- `GPT_RPM_LIMIT`: Set limit per minute (Default: `30`).
-- `GPT_MODEL`: Default is `gpt-4o-mini` (supports vision, cost-effective).
+- `GPT_ENABLED`: Set to `true` (default) or `false`
+- `GPT_RPM_LIMIT`: API calls per minute (Default: `10`, lower = fewer calls, lower cost)
+- `GPT_MODEL`: Default is `gpt-4o-mini` (vision + cost-effective)
 
 ## Note on OpenAI
 
-OpenAI API is paid. You must add a payment method at [platform.openai.com](https://platform.openai.com) to use GPT for spam detection. There is no free tier like Gemini.
+OpenAI API is paid. Add a payment method at [platform.openai.com](https://platform.openai.com) to use GPT.
 
 ## Build Verification
 
-The bot will automatically detect the key. If the key is missing or invalid, the bot will start but will log a warning and fallback to standard detection mode without GPT.
+The bot will log `GPT AI scanner initialized (Model: gpt-4o-mini, Redis rate limit: on)` when Redis is connected. If the API key is missing, the bot starts without GPT.

@@ -472,7 +472,7 @@ Please use /funding commands there! 📈"""
     GPT_ENABLED = os.getenv("GPT_ENABLED", "true").lower() == "true"
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     GPT_MODEL = os.getenv("GPT_MODEL", "gpt-4o-mini")
-    GPT_RPM_LIMIT = int(os.getenv("GPT_RPM_LIMIT", "30"))
+    GPT_RPM_LIMIT = int(os.getenv("GPT_RPM_LIMIT", "10"))
     GPT_CONFIDENCE_THRESHOLD = 0.8
     GPT_SCAN_THRESHOLD = 0.3
     

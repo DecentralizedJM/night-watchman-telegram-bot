@@ -41,13 +41,14 @@ class GPTScanner:
         self._request_timestamps = deque()
         self.client = None
 
-        # Initialize Redis
+        # Initialize Redis for global rate limiting (required for multi-instance Railway deploys)
         self.redis = RedisManager()
 
         if self.enabled and self.api_key:
             try:
                 self.client = AsyncOpenAI(api_key=self.api_key)
-                logger.info(f"GPT AI scanner initialized (Model: {self.model_name})")
+                redis_status = "Redis rate limit: on" if self.redis.enabled else "Redis rate limit: off (in-memory only)"
+                logger.info(f"GPT AI scanner initialized (Model: {self.model_name}, {redis_status})")
             except Exception as e:
                 logger.error(f"Failed to initialize GPT: {e}")
                 self.enabled = False
