@@ -406,6 +406,16 @@ class NightWatchman:
             self.bot_user_id = bot_info.get('id')
             logger.info(f"Bot: @{bot_info.get('username', 'unknown')} (ID: {self.bot_user_id})")
         
+        # Load immune users from Redis into cache (so enhanced users have immunity after restart)
+        if self.redis.enabled:
+            try:
+                immune_ids = await self.redis.get_immune_user_ids()
+                for uid in immune_ids:
+                    self.enhanced_users[uid] = True
+                logger.info(f"🛡️ Immunity: loaded {len(immune_ids)} enhanced users from Redis")
+            except Exception as e:
+                logger.warning(f"Could not load immune users from Redis: {e}")
+        
         # Initialize crypto tickers from exchanges (runs in background)
         asyncio.create_task(self._init_crypto_tickers())
         
@@ -713,6 +723,14 @@ class NightWatchman:
                 # Still track admin activity for stats (but they don't get rep points)
                 if self.config.ANALYTICS_ENABLED:
                     self.analytics.track_message(user_id, chat_id)
+                return
+            
+            # ENHANCED USERS = VIP = TOTAL FREEDOM: No bans, mutes, deletes, or abuse checks.
+            # /enhance or ⭐ reaction grants VIP; Night Watchman ignores them like admins.
+            if await self._is_vip_user(user_id):
+                if self.config.ANALYTICS_ENABLED:
+                    self.analytics.track_message(user_id, chat_id)
+                logger.info(f"🛡️ Enhanced user {user_name} (ID: {user_id}) - full immunity, skipping all checks")
                 return
             
             # Track this group as monitored
@@ -1154,12 +1172,7 @@ class NightWatchman:
             # Handle non-Indian language spam (with or without URLs)
             if result.get('non_indian_language'):
                 if await self._is_vip_user(user_id):
-                    logger.info(f"🛡️ User {user_name} (ID: {user_id}) was enhanced by admin, skipping non-Indian language ban")
-                    await self._delete_message(chat_id, message_id)
-                    await self._send_message(
-                        chat_id,
-                        f"⚠️ <b>{user_name}</b>, non-Indian languages are not allowed here."
-                    )
+                    logger.info(f"🛡️ User {user_name} (ID: {user_id}) was enhanced by admin - full immunity, no action")
                     return
                 elif is_high_rep:
                      logger.info(f"🛡️ High reputation user {user_name} (rep: {user_rep}) used non-Indian language, sparing ban.")
@@ -1204,10 +1217,9 @@ class NightWatchman:
                 return
             
             if result['is_spam']:
-                # VIP BYPASS: Skip ban/warn for admin-enhanced users
+                # VIP BYPASS: Enhanced users get full immunity - no delete, no warn (should not reach here if early bypass works)
                 if is_user_enhanced and result['action'] in ['delete_and_ban', 'delete_and_warn']:
-                    logger.info(f"🛡️ User {user_name} (ID: {user_id}) was enhanced by admin, skipping spam ban")
-                    await self._delete_message(chat_id, message_id)
+                    logger.info(f"🛡️ User {user_name} (ID: {user_id}) was enhanced by admin - full immunity, no action")
                     return
                 elif is_high_rep and result['action'] == 'delete_and_ban':
                     logger.info(f"🛡️ User {user_name} has high reputation ({user_rep}), skipping spam ban")
@@ -2270,15 +2282,22 @@ I am a spam detection bot that protects Telegram groups from:
     
     async def _is_vip_user(self, user_id: int) -> bool:
         """
-        Check if user has immunity (VIP treatment) from Night Watchman actions.
-        Includes: admin-enhanced users (full immunity) OR high-rep users (>10 points, leniency).
+        Check if user has VIP status (total freedom from Night Watchman).
+        VIP = /enhance or ⭐ reaction by admin. They are never banned, muted, deleted, or
+        warned—abuse/bad language is not considered. Same treatment as admins.
+        Sources: in-memory + reputation file + Redis (persistent after restarts).
         """
-        # 1. Admin-enhanced = full immunity (sync check)
+        # 1. Admin-enhanced = full immunity (in-memory + reputation file)
         if self._is_admin_enhanced(user_id):
             return True
         # 2. Redis immune set (persistent, from /enhance and emoji reaction)
-        if self.redis.enabled and await self.redis.is_user_immune(user_id):
-            return True
+        if self.redis.enabled:
+            try:
+                if await self.redis.is_user_immune(user_id):
+                    self.enhanced_users[user_id] = True  # Cache so _is_admin_enhanced sees it next time
+                    return True
+            except Exception as e:
+                logger.warning(f"Redis immunity check failed for {user_id}: {e}")
         # 3. High rep (points > 10) = leniency for most actions
         if self.config.REPUTATION_ENABLED and self.reputation.is_immune(user_id):
             return True

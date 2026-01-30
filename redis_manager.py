@@ -84,6 +84,17 @@ class RedisManager:
             logger.error(f"Redis error removing immune user: {e}")
             return False
 
+    async def get_immune_user_ids(self) -> List[int]:
+        """Return all user IDs in the immune set (for startup cache)."""
+        if not self.enabled:
+            return []
+        try:
+            members = await self.redis.smembers('nightwatchman:immune_users')
+            return [int(m) for m in members if str(m).isdigit()]
+        except Exception as e:
+            logger.error(f"Redis error getting immune users: {e}")
+            return []
+
     # === SPAM DETECTION / RATE LIMITS ===
 
     async def check_rate_limit(self, key: str, limit: int, window_seconds: int) -> bool:
