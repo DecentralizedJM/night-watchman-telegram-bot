@@ -1019,7 +1019,7 @@ class NightWatchman:
             
             # Check for photos
             image_data = None
-            if message.get('photo') and getattr(self.config, 'GEMINI_ENABLED', False):
+            if message.get('photo') and getattr(self.config, 'GPT_ENABLED', False):
                 try:
                     # Get largest photo
                     photos = message.get('photo', [])
@@ -2134,12 +2134,12 @@ I am a spam detection bot that protects Telegram groups from:
         
         # Try to extract patterns using Gemini
         extraction_status = "Skipped (Scanner disabled)"
-        if self.detector.gemini_scanner and self.detector.gemini_scanner.enabled:
+        if self.detector.gpt_scanner and self.detector.gpt_scanner.enabled:
             try:
                 from pattern_extractor import extract_patterns_from_description, validate_and_sanitize_patterns
                 
                 patterns = await extract_patterns_from_description(
-                    self.detector.gemini_scanner,
+                    self.detector.gpt_scanner,
                     description
                 )
                 

@@ -1,6 +1,6 @@
 """
 Night Watchman - Pattern Extraction Helper
-Uses Gemini to extract spam patterns from natural language descriptions
+Uses GPT to extract spam patterns from natural language descriptions
 """
 
 import json
@@ -11,20 +11,20 @@ from typing import Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
-async def extract_patterns_from_description(gemini_scanner, description: str) -> Optional[Dict]:
+async def extract_patterns_from_description(gpt_scanner, description: str) -> Optional[Dict]:
     """
-    Use Gemini to extract spam patterns from a scam description.
-    
+    Use GPT to extract spam patterns from a scam description.
+
     Args:
-        gemini_scanner: GeminiScanner instance
+        gpt_scanner: GPTScanner instance
         description: Natural language description of the scam
-        
+
     Returns:
         Dict with keywords, regex_patterns, and category or None if extraction failed
     """
-    if not gemini_scanner or not gemini_scanner.enabled or not gemini_scanner.client:
+    if not gpt_scanner or not gpt_scanner.enabled or not gpt_scanner.client:
         return None
-    
+
     prompt = f"""Extract spam detection patterns from this scam description:
 
 "{description}"
@@ -49,21 +49,17 @@ Focus on extracting:
 - Call-to-action phrases
 - URLs or domain patterns
 """
-    
+
     try:
-        import asyncio
-        
-        # Use the client from gemini_scanner instance
-        client = gemini_scanner.client
-        model_name = gemini_scanner.model_name
-        
-        response = await asyncio.to_thread(
-            client.models.generate_content,
+        client = gpt_scanner.client
+        model_name = gpt_scanner.model_name
+
+        response = await client.chat.completions.create(
             model=model_name,
-            contents=prompt
+            messages=[{"role": "user", "content": prompt}]
         )
-        
-        result_text = response.text.strip()
+
+        result_text = response.choices[0].message.content.strip()
         
         # Remove markdown code blocks if present
         if result_text.startswith("```json"):

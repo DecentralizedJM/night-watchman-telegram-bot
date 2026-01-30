@@ -1,16 +1,15 @@
 """
-Night Watchman - Google Gemini AI Integration
-Uses Gemini (new SDK) for advanced spam detection with rate limiting.
+Night Watchman - OpenAI GPT AI Integration
+Uses ChatGPT (GPT) for advanced spam detection with rate limiting.
 """
 
-import os
+import base64
+import json
 import logging
 import time
-import json
 import asyncio
 from collections import deque
-from datetime import datetime, timezone
-from typing import Dict, Tuple, Optional
+from typing import Dict, Optional
 
 from config import Config
 from redis_manager import RedisManager
@@ -18,100 +17,88 @@ from redis_manager import RedisManager
 logger = logging.getLogger(__name__)
 
 try:
-    from google import genai
-    GEMINI_AVAILABLE = True
+    from openai import AsyncOpenAI
+    GPT_AVAILABLE = True
 except ImportError:
-    GEMINI_AVAILABLE = False
-    logger.warning("google-genai not installed. Gemini scanner disabled.")
+    GPT_AVAILABLE = False
+    logger.warning("openai not installed. GPT scanner disabled.")
 
-class GeminiScanner:
+
+class GPTScanner:
     """
-    Spam scanner using Google's Gemini LLM (new SDK).
-    Handles rate limiting to stay within free tier usage.
+    Spam scanner using OpenAI's GPT (ChatGPT) LLM.
+    Handles rate limiting for cost control.
     """
-    
+
     def __init__(self):
         self.config = Config()
-        self.api_key = self.config.GEMINI_API_KEY
-        self.model_name = getattr(self.config, 'GEMINI_MODEL', 'gemini-3-flash-preview')
-        self.rpm_limit = getattr(self.config, 'GEMINI_RPM_LIMIT', 10)
-        self.enabled = getattr(self.config, 'GEMINI_ENABLED', False) and GEMINI_AVAILABLE
-        
+        self.api_key = getattr(self.config, 'OPENAI_API_KEY', None) or getattr(self.config, 'GPT_API_KEY', None)
+        self.model_name = getattr(self.config, 'GPT_MODEL', 'gpt-4o-mini')
+        self.rpm_limit = getattr(self.config, 'GPT_RPM_LIMIT', 30)
+        self.enabled = getattr(self.config, 'GPT_ENABLED', True) and GPT_AVAILABLE
+
         # Rate limiting: Store timestamps of requests
         self._request_timestamps = deque()
         self.client = None
-        
+
         # Initialize Redis
         self.redis = RedisManager()
-        
+
         if self.enabled and self.api_key:
             try:
-                self.client = genai.Client(api_key=self.api_key)
-                logger.info(f"✨ Gemini AI scanner initialized (Model: {self.model_name})")
+                self.client = AsyncOpenAI(api_key=self.api_key)
+                logger.info(f"GPT AI scanner initialized (Model: {self.model_name})")
             except Exception as e:
-                logger.error(f"Failed to initialize Gemini: {e}")
+                logger.error(f"Failed to initialize GPT: {e}")
                 self.enabled = False
         elif self.enabled and not self.api_key:
-            logger.warning("⚠️ Gemini enabled but no API key found. Disabling.")
+            logger.warning("GPT enabled but no API key found. Disabling.")
             self.enabled = False
-            
+
     async def _check_rate_limit(self) -> bool:
         """
         Check if we have quota to make a request.
         Uses Redis if available, otherwise falls back to local memory.
         """
-        # USE REDIS if available (Global limit across all instances)
         if self.redis.enabled:
-            # key: gemini:rpm
-            # limit: self.rpm_limit
-            # window: 60 seconds
-            # Returns True if BLOCKED, so we invert it
-            is_limited = await self.redis.check_rate_limit("gemini:rpm", self.rpm_limit, 60)
+            is_limited = await self.redis.check_rate_limit("gpt:rpm", self.rpm_limit, 60)
             return not is_limited
 
-        # Fallback: In-memory check
         now = time.time()
-        
-        # Remove timestamps older than 60 seconds
         while self._request_timestamps and self._request_timestamps[0] < now - 60:
             self._request_timestamps.popleft()
-            
-        # Check if we have room
+
         if len(self._request_timestamps) < self.rpm_limit:
             self._request_timestamps.append(now)
             return True
-            
         return False
-        
+
     async def scan_message(self, text: str, user_context: str = "", image_data: Optional[bytes] = None) -> Optional[Dict]:
         """
-        Scan a message using Gemini.
-        
+        Scan a message using GPT.
+
         Args:
             text: Message text
             user_context: Additional context about user (e.g. "New user, joined 5 min ago")
             image_data: Optional image data (bytes) for image-based spam detection
-            
+
         Returns:
             Dict with keys: is_spam (bool), confidence (float), reasoning (str), reason (str)
             OR None if scan was skipped (rate limit, error, disabled)
         """
         if not self.enabled or not self.client:
             return None
-            
+
         if not text or len(text) < 10:
-            # If we have image data but no text, still scan
             if not image_data:
                 return None
-        
-        # Check rate limit
+
         if not await self._check_rate_limit():
-            logger.debug("⏳ Gemini rate limit reached. Skipping scan.")
+            logger.debug("GPT rate limit reached. Skipping scan.")
             return None
-            
+
         try:
-            # Construct prompt
-            system_instruction = """You are a Telegram Group Moderator Bot. 
+            system_instruction = """You are a Telegram Group Moderator Bot.
 Analyze the following message for SPAM, SCAM, PHISHING, or MALICIOUS content.
 
 Context: Crypto trading community (Mudrex).
@@ -133,59 +120,60 @@ Respond in JSON format ONLY:
   "reasoning": "short explanation"
 }}
 """
-            prompt = f"{system_instruction}\n\nMessage: \"{text}\"" if text else system_instruction
-            
-            # Prepare contents - text and/or image
-            contents = [prompt]
+            user_content = system_instruction.format(user_context=user_context or "None")
+            if text:
+                user_content += f'\n\nMessage: "{text}"'
+
+            content_parts = [{"type": "text", "text": user_content}]
             if image_data:
-                from google.genai import types
-                image_part = types.Part.from_bytes(data=image_data, mime_type="image/jpeg")
-                contents = [image_part, prompt]
-            
-            # Generate content using new API
-            response = await asyncio.to_thread(
-                self.client.models.generate_content,
+                b64 = base64.b64encode(image_data).decode("utf-8")
+                content_parts.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{b64}"}
+                })
+
+            response = await self.client.chat.completions.create(
                 model=self.model_name,
-                contents=contents
+                messages=[{"role": "user", "content": content_parts}]
             )
-            
-            result_text = response.text.strip()
-            
-            # Remove markdown code blocks if present
+
+            result_text = response.choices[0].message.content.strip()
+
             if result_text.startswith("```json"):
                 result_text = result_text[7:]
             if result_text.startswith("```"):
                 result_text = result_text[3:]
             if result_text.endswith("```"):
                 result_text = result_text[:-3]
-                
+
             data = json.loads(result_text.strip())
-            
+
             return {
                 'is_spam': data.get('is_spam', False),
                 'confidence': float(data.get('confidence', 0.0)),
                 'reasoning': data.get('reasoning', 'No reason provided'),
-                'reason': data.get('reasoning', 'No reason provided')  # Alias for compatibility
+                'reason': data.get('reasoning', 'No reason provided')
             }
-            
+
         except json.JSONDecodeError as e:
-            logger.error(f"Gemini JSON parse error: {e}")
+            logger.error(f"GPT JSON parse error: {e}")
             return None
         except Exception as e:
             error_msg = str(e).lower()
             if 'quota' in error_msg or 'rate' in error_msg:
-                logger.warning(f"⏳ Gemini quota/rate limit: {e}")
+                logger.warning(f"GPT quota/rate limit: {e}")
             elif 'api' in error_msg or 'key' in error_msg:
-                logger.error(f"❌ Gemini API error (check key): {e}")
+                logger.error(f"GPT API error (check key): {e}")
             else:
-                logger.error(f"❌ Gemini scan error: {e}")
+                logger.error(f"GPT scan error: {e}")
             return None
 
-# Global instance
-_gemini_scanner = None
 
-def get_gemini_scanner() -> GeminiScanner:
-    global _gemini_scanner
-    if _gemini_scanner is None:
-        _gemini_scanner = GeminiScanner()
-    return _gemini_scanner
+_gpt_scanner = None
+
+
+def get_gpt_scanner() -> GPTScanner:
+    global _gpt_scanner
+    if _gpt_scanner is None:
+        _gpt_scanner = GPTScanner()
+    return _gpt_scanner

@@ -17,9 +17,9 @@ try:
 except ImportError:
     ML_ENABLED = False
 
-# Import Gemini Scanner (optional)
+# Import GPT Scanner (optional)
 try:
-    from gemini_scanner import get_gemini_scanner
+    from gpt_scanner import get_gpt_scanner
 except ImportError:
     pass
 
@@ -92,17 +92,17 @@ class SpamDetector:
             except Exception as e:
                 logger.error(f"Failed to initialize ML classifier: {e}")
         
-        # Initialize Gemini Scanner
-        self.gemini_scanner = None
+        # Initialize GPT Scanner
+        self.gpt_scanner = None
         try:
-            from gemini_scanner import get_gemini_scanner
-            self.gemini_scanner = get_gemini_scanner()
-            if self.gemini_scanner.enabled:
-                logger.info("✨ Gemini AI scanner connected")
+            from gpt_scanner import get_gpt_scanner
+            self.gpt_scanner = get_gpt_scanner()
+            if self.gpt_scanner.enabled:
+                logger.info("GPT AI scanner connected")
         except ImportError:
             pass
         except Exception as e:
-            logger.error(f"Failed to initialize Gemini scanner: {e}")
+            logger.error(f"Failed to initialize GPT scanner: {e}")
         
         # Initialize Hugging Face Classifier
         self.hf_classifier = None
@@ -412,7 +412,7 @@ class SpamDetector:
         current_score = result['spam_score']
         
         # Don't scan if already DEFINITELY spam (optimization)
-        if current_score < 0.9 and hasattr(self, 'gemini_scanner') and self.gemini_scanner and self.gemini_scanner.enabled:
+        if current_score < 0.9 and hasattr(self, 'gpt_scanner') and self.gpt_scanner and self.gpt_scanner.enabled:
             should_scan = False
             
             # Case 1: Suspicious score range (checks for hidden spam that heuristic missed or confirmed allowed)
@@ -431,34 +431,34 @@ class SpamDetector:
             if should_scan:
                 try:
                     # Provide a timeout to ensure we don't hang the bot
-                    gemini_result = await self.gemini_scanner.scan_message(message, image_data=image_data)
+                    gpt_result = await self.gpt_scanner.scan_message(message, image_data=image_data)
                     
-                    if gemini_result:
-                        gemini_score = gemini_result.get('confidence', 0.0)
-                        is_gemini_spam = gemini_result.get('is_spam', False)
-                        reason = gemini_result.get('reason', 'Gemini AI detection')
+                    if gpt_result:
+                        gpt_score = gpt_result.get('confidence', 0.0)
+                        is_gpt_spam = gpt_result.get('is_spam', False)
+                        reason = gpt_result.get('reason', 'GPT AI detection')
                         
-                        if is_gemini_spam:
-                            logger.info(f"Gemini DETECTED SPAM: {reason} (Score: {gemini_score})")
-                            # Boost score - if Gemini is very sure, make it actionable
-                            new_score = max(result['spam_score'], gemini_score)
+                        if is_gpt_spam:
+                            logger.info(f"GPT DETECTED SPAM: {reason} (Score: {gpt_score})")
+                            # Boost score - if GPT is very sure, make it actionable
+                            new_score = max(result['spam_score'], gpt_score)
                             
-                            # If Gemini is highly confident (>0.85), ensure we cross the delete threshold
-                            if gemini_score > 0.85:
+                            # If GPT is highly confident (>0.85), ensure we cross the delete threshold
+                            if gpt_score > 0.85:
                                 new_score = max(new_score, 0.8)
                                 
                             result['spam_score'] = new_score
-                            result['reasons'].append(f"Gemini AI: {reason}")
+                            result['reasons'].append(f"GPT AI: {reason}")
                         else:
-                            # Gemini thinks it's safe 
+                            # GPT thinks it's safe
                             # If heuristic was only mildly suspicious, authorize the message
                             if current_score < 0.6:
-                                logger.info(f"Gemini cleared message: {reason}")
+                                logger.info(f"GPT cleared message: {reason}")
                                 # Reduce score to avoid flagging legitimate messages
                                 result['spam_score'] = min(result['spam_score'], 0.25)
 
                 except Exception as e:
-                    logger.error(f"Error during Gemini scan: {e}")
+                    logger.error(f"Error during GPT scan: {e}")
 
         # Step 13: Hugging Face Zero-Shot Classification (Fallback)
         # Use HF if available and message is suspicious but not yet definitively spam

@@ -468,14 +468,13 @@ Please use /funding commands there! 📈"""
     ANALYTICS_RETENTION_DAYS = 90  # Keep data for 90 days
     ANALYTICS_DATA_DIR = os.getenv("ANALYTICS_DATA_DIR", "data")  # Configurable for Railway volumes
     
-    # Gemini AI Integration (Free Tier)
-    GEMINI_ENABLED = True
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-    GEMINI_MODEL = "gemini-3-flash-preview"  # Official model name from Google AI docs
-    GEMINI_RPM_LIMIT = 10  # Conservative limit (Free tier is usually 15-60 RPM depending on region)
-    GEMINI_CONFIDENCE_THRESHOLD = 0.8  # Trust Gemini if it's 80% sure
-    GEMINI_SCAN_THRESHOLD = 0.3  # Only scan messages that are already slightly suspicious (score > 0.3)
-    # Don't waste Gemini quota on obvious safe messages, but use it to catch subtle spam
+    # GPT (OpenAI) AI Integration
+    GPT_ENABLED = os.getenv("GPT_ENABLED", "true").lower() == "true"
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    GPT_MODEL = os.getenv("GPT_MODEL", "gpt-4o-mini")
+    GPT_RPM_LIMIT = int(os.getenv("GPT_RPM_LIMIT", "30"))
+    GPT_CONFIDENCE_THRESHOLD = 0.8
+    GPT_SCAN_THRESHOLD = 0.3
     
     # ==================== NEW FEATURES ====================
     
