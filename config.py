@@ -27,8 +27,8 @@ class Config:
         "send me", "invest with me", "trading signals",
         "binary options", "forex signals",
         
-        # Gemini Bait: Keywords that might be safe but warrant AI inspection
-        # These give a low score (0.3) which triggers Gemini scan if enabled
+        # GPT Bait: Keywords that might be safe but warrant AI inspection
+        # These give a low score (0.3) which triggers GPT scan if enabled
         "check bio", "link in bio", "bio link", "see bio",
         "sniper bot", "mev bot", "front run bot", 
         "win rate", "winning rate", "accuracy", 
@@ -472,7 +472,7 @@ Please use /funding commands there! 📈"""
     GPT_ENABLED = os.getenv("GPT_ENABLED", "true").lower() == "true"
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     GPT_MODEL = os.getenv("GPT_MODEL", "gpt-4o-mini")
-    GPT_RPM_LIMIT = int(os.getenv("GPT_RPM_LIMIT", "10"))
+    GPT_RPM_LIMIT = int(os.getenv("GPT_RPM_LIMIT", "30"))
     GPT_CONFIDENCE_THRESHOLD = 0.8
     GPT_SCAN_THRESHOLD = 0.3
     

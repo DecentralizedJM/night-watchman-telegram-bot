@@ -407,8 +407,8 @@ class SpamDetector:
                 result['reasons'].append(f"ML classifier: {ml_confidence:.0%} spam confidence")
                 result['details']['ml_confidence'] = ml_confidence
         
-        # Step 12: Gemini AI Analysis
-        # Use Gemini if enabled and score is suspicious but not definitive
+        # Step 12: GPT AI Analysis
+        # Use GPT if enabled and score is suspicious but not definitive
         current_score = result['spam_score']
         
         # Don't scan if already DEFINITELY spam (optimization)
@@ -416,7 +416,7 @@ class SpamDetector:
             should_scan = False
             
             # Case 1: Suspicious score range (checks for hidden spam that heuristic missed or confirmed allowed)
-            # We use a wider range for Gemini to help with false positives AND false negatives
+            # We use a wider range for GPT to help with false positives AND false negatives
             if 0.25 <= current_score <= 0.85:
                 should_scan = True
                 
@@ -424,7 +424,7 @@ class SpamDetector:
             elif is_first_message and current_score > 0.1 and (entities or len(message) > 200):
                 should_scan = True
                 
-            # Case 3: Image present (always scan images if Gemini enabled)
+            # Case 3: Image present (always scan images if GPT enabled)
             elif image_data:
                 should_scan = True
                 
@@ -465,7 +465,7 @@ class SpamDetector:
         current_score = result['spam_score']
         
         if current_score < 0.9 and hasattr(self, 'hf_classifier') and self.hf_classifier and self.hf_classifier.enabled:
-            # Run HF for borderline cases or when Gemini not available
+            # Run HF for borderline cases or when GPT not available
             should_scan_hf = False
             
             if 0.3 <= current_score <= 0.7:

@@ -269,6 +269,9 @@ python3 night_watchman.py
 | `ADMIN_CHAT_ID` | Your chat ID for spam reports | ✅ Yes |
 | `ADMIN_USER_IDS` | Comma-separated list of admin user IDs | ✅ Yes |
 | `OPENAI_API_KEY` | OpenAI API key (for GPT spam detection) | ⚡ Recommended |
+| `GPT_ENABLED` | Enable GPT AI scanner (default: true) | Optional |
+| `GPT_MODEL` | OpenAI model (default: gpt-4o-mini) | Optional |
+| `GPT_RPM_LIMIT` | GPT API calls per minute (default: 30) | Optional |
 | `HUGGINGFACE_API_KEY` | Hugging Face API token (free tier) | ⚡ Recommended |
 | `REDIS_URL` | Redis connection URL (e.g., redis://...) | ✅ Yes (v1.5.0+) |
 

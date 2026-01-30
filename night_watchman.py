@@ -1560,10 +1560,10 @@ class NightWatchman:
                 remaining = self.config.AUTO_MUTE_AFTER_WARNINGS - warnings
                 action_text = "removed" if deleted else "flagged"
 
-                # Check if we should append the generic safety tip (for scam/Gemini detections)
+                # Check if we should append the generic safety tip (for scam/GPT detections)
                 show_safety_tip = False
                 for r in result.get('reasons', []):
-                    if "Gemini" in r or "scam" in r.lower() or "bait" in r.lower():
+                    if "GPT" in r or "scam" in r.lower() or "bait" in r.lower():
                         show_safety_tip = True
                         break
                 
@@ -2132,7 +2132,7 @@ I am a spam detection bot that protects Telegram groups from:
         
         patterns = None
         
-        # Try to extract patterns using Gemini
+        # Try to extract patterns using GPT
         extraction_status = "Skipped (Scanner disabled)"
         if self.detector.gpt_scanner and self.detector.gpt_scanner.enabled:
             try:
