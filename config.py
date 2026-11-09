@@ -266,6 +266,22 @@ class Config:
     ANTI_RAID_ENABLED = True
     RAID_DETECTION_WINDOW_MINUTES = 5  # Check last 5 minutes
     RAID_THRESHOLD_USERS = 10  # If 10+ new users join in window, it's a raid
+    RAID_LOCK_MINUTES = 15  # Mute new joins and decline join requests after a raid
+
+    # Forwards from these channel usernames or chat ids skip the forward ban.
+    KNOWN_FORWARD_CHANNELS = ["officialmudrex"]
+
+    # Usernames that may contain "mudrex" without being treated as impersonators.
+    OFFICIAL_MUDREX_USERNAMES = [
+        "mudrex",
+        "officialmudrex",
+        "mudrex_nightwatchman_bot",
+        "nightwatchman_bot",
+    ]
+
+    # Grey-zone scores are sent to admins with Ban / Mute / Fine buttons.
+    REVIEW_BUTTONS_ENABLED = True
+    WARNING_TTL_SECONDS = 7 * 86400
     
     # CAS (Combot Anti-Spam) Integration
     CAS_ENABLED = True  # Check new members against CAS database
@@ -471,14 +487,10 @@ Please use /funding commands there! 📈"""
     ANALYTICS_RETENTION_DAYS = 90  # Keep data for 90 days
     ANALYTICS_DATA_DIR = os.getenv("ANALYTICS_DATA_DIR", "data")  # Configurable for Railway volumes
     
-    # Gemini AI Integration (Free Tier)
-    GEMINI_ENABLED = True
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-    GEMINI_MODEL = "gemini-3-flash-preview"  # Official model name from Google AI docs
-    GEMINI_RPM_LIMIT = 10  # Conservative limit (Free tier is usually 15-60 RPM depending on region)
-    GEMINI_CONFIDENCE_THRESHOLD = 0.8  # Trust Gemini if it's 80% sure
-    GEMINI_SCAN_THRESHOLD = 0.3  # Only scan messages that are already slightly suspicious (score > 0.3)
-    # Don't waste Gemini quota on obvious safe messages, but use it to catch subtle spam
+    # Remote model APIs are not used. Detection stays on-box.
+    GEMINI_ENABLED = False
+    GEMINI_API_KEY = None
+    HUGGINGFACE_ENABLED = False
     
     # ==================== NEW FEATURES ====================
     

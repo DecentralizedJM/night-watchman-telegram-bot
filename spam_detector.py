@@ -17,11 +17,8 @@ try:
 except ImportError:
     ML_ENABLED = False
 
-# Import Gemini Scanner (optional)
-try:
-    from gemini_scanner import get_gemini_scanner
-except ImportError:
-    pass
+from scam_memory import ScamMemory
+from local_rules import check_account_threats
 
 logger = logging.getLogger(__name__)
 
@@ -84,37 +81,19 @@ class SpamDetector:
         
         # Initialize ML classifier
         self.ml_classifier = None
+        data_dir = getattr(self.config, 'ANALYTICS_DATA_DIR', 'data')
         if ML_ENABLED:
             try:
-                data_dir = getattr(self.config, 'ANALYTICS_DATA_DIR', 'data')
                 self.ml_classifier = get_classifier(data_dir)
                 logger.info("🤖 ML spam classifier initialized")
             except Exception as e:
                 logger.error(f"Failed to initialize ML classifier: {e}")
         
-        # Initialize Gemini Scanner
-        self.gemini_scanner = None
-        try:
-            from gemini_scanner import get_gemini_scanner
-            self.gemini_scanner = get_gemini_scanner()
-            if self.gemini_scanner.enabled:
-                logger.info("✨ Gemini AI scanner connected")
-        except ImportError:
-            pass
-        except Exception as e:
-            logger.error(f"Failed to initialize Gemini scanner: {e}")
-        
-        # Initialize Hugging Face Classifier
-        self.hf_classifier = None
-        try:
-            from hf_classifier import get_hf_classifier
-            self.hf_classifier = get_hf_classifier()
-            if self.hf_classifier.enabled:
-                logger.info("🤗 Hugging Face classifier connected")
-        except ImportError:
-            pass
-        except Exception as e:
-            logger.error(f"Failed to initialize HF classifier: {e}")
+        embedder = None
+        if self.ml_classifier and getattr(self.ml_classifier, "embedding_model", None):
+            embedder = self.ml_classifier.embedding_model.encode
+        self.scam_memory = ScamMemory(data_dir, embedder=embedder)
+        self.on_scam_learned = None
         
         # Track user message history for rate limiting
         self.user_messages: Dict[int, List[datetime]] = {}
@@ -410,91 +389,25 @@ class SpamDetector:
                 result['reasons'].append(f"ML classifier: {ml_confidence:.0%} spam confidence")
                 result['details']['ml_confidence'] = ml_confidence
         
-        # Step 12: Gemini AI Analysis
-        # Use Gemini if enabled and score is suspicious but not definitive
-        current_score = result['spam_score']
-        
-        # Don't scan if already DEFINITELY spam (optimization)
-        if current_score < 0.9 and hasattr(self, 'gemini_scanner') and self.gemini_scanner and self.gemini_scanner.enabled:
-            should_scan = False
-            
-            # Case 1: Suspicious score range (checks for hidden spam that heuristic missed or confirmed allowed)
-            # We use a wider range for Gemini to help with false positives AND false negatives
-            if 0.25 <= current_score <= 0.85:
-                should_scan = True
-                
-            # Case 2: New user with potential spam indicators but low score (common bypass)
-            elif is_first_message and current_score > 0.1 and (entities or len(message) > 200):
-                should_scan = True
-                
-            # Case 3: Image present (always scan images if Gemini enabled)
-            elif image_data:
-                should_scan = True
-                
-            if should_scan:
-                try:
-                    # Provide a timeout to ensure we don't hang the bot
-                    gemini_result = await self.gemini_scanner.scan_message(message, image_data=image_data)
-                    
-                    if gemini_result:
-                        gemini_score = gemini_result.get('confidence', 0.0)
-                        is_gemini_spam = gemini_result.get('is_spam', False)
-                        reason = gemini_result.get('reason', 'Gemini AI detection')
-                        
-                        if is_gemini_spam:
-                            logger.info(f"Gemini DETECTED SPAM: {reason} (Score: {gemini_score})")
-                            # Boost score - if Gemini is very sure, make it actionable
-                            new_score = max(result['spam_score'], gemini_score)
-                            
-                            # If Gemini is highly confident (>0.85), ensure we cross the delete threshold
-                            if gemini_score > 0.85:
-                                new_score = max(new_score, 0.8)
-                                
-                            result['spam_score'] = new_score
-                            result['reasons'].append(f"Gemini AI: {reason}")
-                        else:
-                            # Gemini thinks it's safe 
-                            # If heuristic was only mildly suspicious, authorize the message
-                            if current_score < 0.6:
-                                logger.info(f"Gemini cleared message: {reason}")
-                                # Reduce score to avoid flagging legitimate messages
-                                result['spam_score'] = min(result['spam_score'], 0.25)
-
-                except Exception as e:
-                    logger.error(f"Error during Gemini scan: {e}")
-
-        # Step 13: Hugging Face Zero-Shot Classification (Fallback)
-        # Use HF if available and message is suspicious but not yet definitively spam
-        current_score = result['spam_score']
-        
-        if current_score < 0.9 and hasattr(self, 'hf_classifier') and self.hf_classifier and self.hf_classifier.enabled:
-            # Run HF for borderline cases or when Gemini not available
-            should_scan_hf = False
-            
-            if 0.3 <= current_score <= 0.7:
-                should_scan_hf = True
-            elif is_first_message and len(message) > 50:
-                should_scan_hf = True
-            
-            if should_scan_hf:
-                try:
-                    hf_result = await self.hf_classifier.classify(message)
-                    
-                    if hf_result:
-                        is_hf_spam = hf_result.get('is_spam', False)
-                        hf_confidence = hf_result.get('confidence', 0.0)
-                        hf_category = hf_result.get('category', 'unknown')
-                        
-                        if is_hf_spam and hf_confidence > 0.7:
-                            logger.info(f"🤗 HF detected spam: {hf_category} ({hf_confidence:.0%})")
-                            result['spam_score'] = max(result['spam_score'], hf_confidence)
-                            result['reasons'].append(f"HF AI: {hf_category}")
-                        elif not is_hf_spam and hf_confidence > 0.8:
-                            # HF is very confident it's legitimate
-                            logger.info(f"🤗 HF cleared message ({hf_confidence:.0%})")
-                            result['spam_score'] = min(result['spam_score'], 0.25)
-                except Exception as e:
-                    logger.error(f"Error during HF classification: {e}")
+        # Local confirmed-scam memory (embeddings when the on-box model is loaded,
+        # otherwise token overlap). No Gemini or Hugging Face calls.
+        if getattr(self, "scam_memory", None) and result["spam_score"] < 0.9:
+            similarity, kind = self.scam_memory.score(message)
+            if similarity > 0:
+                result["details"]["scam_similarity"] = round(similarity, 3)
+                result["details"]["scam_similarity_kind"] = kind
+                if kind == "embedding" and similarity >= 0.9:
+                    result["spam_score"] = max(result["spam_score"], 0.85)
+                    result["reasons"].append(f"Matches a confirmed scam ({similarity:.0%})")
+                elif kind == "embedding" and similarity >= 0.78:
+                    result["spam_score"] += 0.35
+                    result["reasons"].append(f"Similar to a confirmed scam ({similarity:.0%})")
+                elif kind == "overlap" and similarity >= 0.72:
+                    result["spam_score"] = max(result["spam_score"], 0.8)
+                    result["reasons"].append(f"Overlaps a confirmed scam ({similarity:.0%})")
+                elif kind == "overlap" and similarity >= 0.5:
+                    result["spam_score"] += 0.3
+                    result["reasons"].append(f"Partial overlap with a confirmed scam ({similarity:.0%})")
 
         # Determine if spam based on score
         if result['spam_score'] >= 0.7:
@@ -528,6 +441,10 @@ class SpamDetector:
                 if phrase.lower() in message_lower:
                     # This is a legitimate question, skip ALL instant ban checks
                     return result
+
+        threat = check_account_threats(message)
+        if threat["instant_ban"]:
+            return threat
         
         # Normalize text to detect Cyrillic obfuscation (х→x, р→p, о→o, etc.)
         message_deobfuscated = self._normalize_text(message)
@@ -1344,6 +1261,11 @@ class SpamDetector:
         Add a message to the ML spam training set.
         Called when an admin bans a user for spam.
         """
+        if getattr(self, "scam_memory", None):
+            added = self.scam_memory.add(message)
+            hook = getattr(self, "on_scam_learned", None)
+            if added and hook:
+                hook(message)
         if self.ml_classifier:
             self.ml_classifier.add_spam_sample(message)
     

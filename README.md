@@ -15,7 +15,7 @@ Night Watchman now uses **Redis** for state management, making it faster, more r
 
 ### Key Benefits
 1. **Persistent Immunity:** When you `/enhance` a user, they stay immune forever (or until you un-enhance), even if the bot restarts.
-2. **Global Rate Limiting:** Gemini API usage is tracked globally in Redis, preventing expensive over-usage across resets.
+2. **Persistent moderation state:** Warnings, join times, raid windows, and forward strikes are stored in Redis and survive restarts.
 3. **High-Speed Counting:** Media spam detection now uses Redis for microsecond-level speed.
 
 ### 🧠 Adaptive Scam Detection (v1.4.0)
@@ -31,9 +31,8 @@ Night Watchman now features a **truly adaptive** four-tier AI/ML detection syste
 **How It Works:**
 
 1. **Layer 1: Generic Regex** - Fast pattern matching catches known variants (42casino, 77casino, lucky2026, etc.)
-2. **Layer 2: ML Classifier** - Ensemble model trained on spam examples (TF-IDF + 3 classifiers)
-3. **Layer 3: Gemini AI** - Intelligent contextual analysis for subtle patterns
-4. **Layer 4: Hugging Face** - Zero-shot classification for completely novel scams
+2. **Layer 2: Local ML Classifier** - Ensemble model trained on spam examples (TF-IDF + 3 classifiers)
+3. **Layer 3: Scam memory** - Confirmed scams are remembered on the machine and matched by similarity. No Gemini or Hugging Face key.
 
 ### 🎓 Teaching the Bot - `/newscam` Command
 
@@ -51,8 +50,8 @@ Bot: ✅ Learned new scam pattern!
 ```
 
 **What happens:**
-- Gemini AI extracts keywords and patterns from your description
-- Bot adds example to ML training data
+- The bot extracts keywords and patterns from your description on the machine
+- Bot adds example to ML training data and scam memory
 - ML model retrains **immediately** (5-10 seconds)
 - Bot automatically detects similar scams going forward
 
@@ -268,25 +267,9 @@ python3 night_watchman.py
 | `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather | ✅ Yes |
 | `ADMIN_CHAT_ID` | Your chat ID for spam reports | ✅ Yes |
 | `ADMIN_USER_IDS` | Comma-separated list of admin user IDs | ✅ Yes |
-| `GEMINI_API_KEY` | Google Gemini API key (free tier) | ⚡ Recommended |
-| `HUGGINGFACE_API_KEY` | Hugging Face API token (free tier) | ⚡ Recommended |
 | `REDIS_URL` | Redis connection URL (e.g., redis://...) | ✅ Yes (v1.5.0+) |
 
-### Getting API Keys (FREE)
-
-**Gemini API (already configured):**
-- Free tier: 15-60 RPM
-- Used for intelligent scam analysis
-
-**Hugging Face API (NEW - for adaptive detection):**
-1. Sign up at https://huggingface.co/join (free)
-2. Go to https://huggingface.co/settings/tokens
-3. Click "New token" → Name: `nightwatchman` → Role: `read`
-4. Copy token and add to `.env`: `HUGGINGFACE_API_KEY=hf_xxxxx`
-5. Restart bot
-
-**Without HF API:** Bot still works with 3-tier detection (Regex + ML + Gemini)  
-**With HF API:** Full 4-tier detection + zero-shot novel scam detection
+Gemini and Hugging Face keys are not used. Spam scoring stays on the machine: rules, the local ensemble, and confirmed-scam memory. Novel scams are picked up from admin bans, the Ban / Mute / Fine review buttons, and `/newscam`.
 
 ## Commands
 

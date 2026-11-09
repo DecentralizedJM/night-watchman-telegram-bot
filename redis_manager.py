@@ -201,3 +201,120 @@ class RedisManager:
         except Exception as e:
             logger.error(f"Redis get CAS cache error: {e}")
         return None
+
+    # === JOINS, RAIDS, FORWARDS, REVIEWS ===
+
+    async def record_join(self, chat_id: int, user_id: int, window_seconds: int) -> int:
+        """Store a join and return how many joins fell inside the raid window."""
+        if not self.enabled:
+            return 0
+        now = time.time()
+        key = f"raid:{chat_id}"
+        try:
+            await self.redis.zadd(key, {str(user_id): now})
+            await self.redis.zremrangebyscore(key, 0, now - window_seconds)
+            await self.redis.expire(key, window_seconds)
+            await self.redis.set(f"joined:{chat_id}:{user_id}", str(now), ex=14 * 86400)
+            return int(await self.redis.zcard(key))
+        except Exception as e:
+            logger.error(f"Redis record join error: {e}")
+            return 0
+
+    async def get_join_time(self, chat_id: int, user_id: int) -> Optional[float]:
+        if not self.enabled:
+            return None
+        try:
+            value = await self.redis.get(f"joined:{chat_id}:{user_id}")
+            return float(value) if value else None
+        except Exception as e:
+            logger.error(f"Redis get join time error: {e}")
+            return None
+
+    async def set_raid_mode(self, chat_id: int, ttl_seconds: int):
+        if not self.enabled:
+            return
+        try:
+            await self.redis.setex(f"raidmode:{chat_id}", ttl_seconds, "1")
+        except Exception as e:
+            logger.error(f"Redis set raid mode error: {e}")
+
+    async def raid_mode_active(self, chat_id: int) -> bool:
+        if not self.enabled:
+            return False
+        try:
+            return await self.redis.exists(f"raidmode:{chat_id}") > 0
+        except Exception as e:
+            logger.error(f"Redis raid mode error: {e}")
+            return False
+
+    async def add_forward_strike(self, chat_id: int, user_id: int, ttl: int = 604800) -> int:
+        if not self.enabled:
+            return 0
+        key = f"forwards:{chat_id}:{user_id}"
+        try:
+            count = await self.redis.incr(key)
+            if count == 1:
+                await self.redis.expire(key, ttl)
+            return int(count)
+        except Exception as e:
+            logger.error(f"Redis forward strike error: {e}")
+            return 0
+
+    async def remember_author(self, chat_id: int, message_id: int, user_id: int):
+        if not self.enabled:
+            return
+        try:
+            await self.redis.setex(f"author:{chat_id}:{message_id}", 86400, str(user_id))
+        except Exception as e:
+            logger.error(f"Redis remember author error: {e}")
+
+    async def get_author(self, chat_id: int, message_id: int) -> Optional[int]:
+        if not self.enabled:
+            return None
+        try:
+            value = await self.redis.get(f"author:{chat_id}:{message_id}")
+            return int(value) if value and str(value).isdigit() else None
+        except Exception as e:
+            logger.error(f"Redis get author error: {e}")
+            return None
+
+    async def store_review(self, token: str, payload: Dict, ttl: int = 86400):
+        if not self.enabled:
+            return
+        try:
+            await self.redis.setex(f"review:{token}", ttl, json.dumps(payload))
+        except Exception as e:
+            logger.error(f"Redis store review error: {e}")
+
+    async def pop_review(self, token: str) -> Optional[Dict]:
+        if not self.enabled:
+            return None
+        key = f"review:{token}"
+        try:
+            data = await self.redis.get(key)
+            if not data:
+                return None
+            await self.redis.delete(key)
+            return json.loads(data)
+        except Exception as e:
+            logger.error(f"Redis pop review error: {e}")
+            return None
+
+    async def add_scam_text(self, text: str):
+        if not self.enabled or not text:
+            return
+        try:
+            await self.redis.lpush("nightwatchman:scam_memory", text)
+            await self.redis.ltrim("nightwatchman:scam_memory", 0, 199)
+        except Exception as e:
+            logger.error(f"Redis add scam text error: {e}")
+
+    async def load_scam_texts(self) -> List[str]:
+        if not self.enabled:
+            return []
+        try:
+            values = await self.redis.lrange("nightwatchman:scam_memory", 0, 199)
+            return list(values or [])
+        except Exception as e:
+            logger.error(f"Redis load scam texts error: {e}")
+            return []

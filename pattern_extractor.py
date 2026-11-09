@@ -1,127 +1,96 @@
 """
-Night Watchman - Pattern Extraction Helper
-Uses Gemini to extract spam patterns from natural language descriptions
+Local pattern extraction for /newscam.
+Pulls keywords and a category from an admin description. No model API.
 """
 
-import json
 import re
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 
+_CATEGORY_HINTS = (
+    ("casino", ("casino", "spin", "jackpot", "betting", "1win", "bonus code")),
+    ("recruitment", ("recruit", "hiring", "per day", "task", "salary")),
+    ("trading", ("profit", "forex", "signal", "mt4", "mt5", "roi")),
+    ("phishing", ("seed", "private key", "wallet", "apk", "verify")),
+)
 
-async def extract_patterns_from_description(gemini_scanner, description: str) -> Optional[Dict]:
-    """
-    Use Gemini to extract spam patterns from a scam description.
-    
-    Args:
-        gemini_scanner: GeminiScanner instance
-        description: Natural language description of the scam
-        
-    Returns:
-        Dict with keywords, regex_patterns, and category or None if extraction failed
-    """
-    if not gemini_scanner or not gemini_scanner.enabled or not gemini_scanner.client:
-        return None
-    
-    prompt = f"""Extract spam detection patterns from this scam description:
 
-"{description}"
+def extract_patterns_locally(description: str) -> Dict:
+    """Extract keywords, a couple of regexes, and a category from plain text."""
+    text = description or ""
+    keywords: List[str] = []
 
-Analyze this scam and extract:
-1. Important keywords (casino names, promo codes, dollar amounts, etc.)
-2. Regex patterns that would match similar scams
-3. Category of scam
+    for match in re.findall(r"https?://[^\s]+|www\.[^\s]+", text, flags=re.I):
+        keywords.append(match.lower().rstrip(".,)"))
 
-Respond in JSON format ONLY:
-{{
-  "keywords": ["keyword1", "keyword2", ...],
-  "regex_patterns": ["pattern1", "pattern2"],
-  "category": "casino|recruitment|trading|phishing|other",
-  "confidence": float (0.0-1.0)
-}}
+    for match in re.findall(r"@[a-zA-Z0-9_]{4,}", text):
+        keywords.append(match.lower())
 
-Focus on extracting:
-- Numbers in casino names (e.g., "88casino" from the description)
-- Promo code patterns (e.g., "mega2026")
-- Dollar amounts (e.g., "$1000")
-- Call-to-action phrases
-- URLs or domain patterns
-"""
-    
-    try:
-        import asyncio
-        
-        # Use the client from gemini_scanner instance
-        client = gemini_scanner.client
-        model_name = gemini_scanner.model_name
-        
-        response = await asyncio.to_thread(
-            client.models.generate_content,
-            model=model_name,
-            contents=prompt
-        )
-        
-        result_text = response.text.strip()
-        
-        # Remove markdown code blocks if present
-        if result_text.startswith("```json"):
-            result_text = result_text[7:]
-        if result_text.startswith("```"):
-            result_text = result_text[3:]
-        if result_text.endswith("```"):
-            result_text = result_text[:-3]
-        
-        data = json.loads(result_text.strip())
-        
-        return {
-            'keywords': data.get('keywords', []),
-            'regex_patterns': data.get('regex_patterns', []),
-            'category': data.get('category', 'other'),
-            'confidence': float(data.get('confidence', 0.0))
-        }
-        
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON parse error extracting patterns: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"Error extracting patterns: {e}")
-        return None
+    for match in re.findall(r"\$\d[\d,]*(?:\.\d+)?|\d+\s?%", text):
+        keywords.append(match.lower().replace(" ", ""))
+
+    for match in re.findall(r"\b[a-zA-Z]*\d{2,}[a-zA-Z0-9]*\b", text):
+        if len(match) >= 4:
+            keywords.append(match.lower())
+
+    for match in re.findall(r"\b[a-zA-Z]{5,}\b", text):
+        word = match.lower()
+        if word not in {"they're", "theyre", "promoting", "people", "about", "where", "which"}:
+            keywords.append(word)
+
+    # Preserve order, drop duplicates
+    seen = set()
+    unique = []
+    for keyword in keywords:
+        if keyword not in seen:
+            seen.add(keyword)
+            unique.append(keyword)
+
+    regexes = []
+    for keyword in unique:
+        if re.search(r"\d", keyword) and re.search(r"[a-z]", keyword) and len(keyword) <= 24:
+            regexes.append(re.escape(keyword))
+        if len(regexes) >= 5:
+            break
+
+    lowered = text.lower()
+    category = "other"
+    for name, hints in _CATEGORY_HINTS:
+        if any(hint in lowered for hint in hints):
+            category = name
+            break
+
+    logger.info(f"Local scam patterns: {len(unique)} keywords, category={category}")
+    return {
+        "keywords": unique[:15],
+        "regex_patterns": regexes,
+        "category": category,
+        "confidence": 0.6 if unique else 0.2,
+    }
 
 
 def validate_and_sanitize_patterns(patterns: Dict) -> Dict:
-    """
-    Validate and sanitize extracted patterns to prevent injection attacks.
-    
-    Args:
-        patterns: Dict with keywords and regex_patterns
-        
-    Returns:
-        Sanitized patterns dict
-    """
+    """Validate and sanitize extracted patterns to prevent injection attacks."""
     sanitized = {
-        'keywords': [],
-        'regex_patterns': [],
-        'category': patterns.get('category', 'other')
+        "keywords": [],
+        "regex_patterns": [],
+        "category": patterns.get("category", "other"),
     }
-    
-    # Sanitize keywords (remove dangerous characters)
-    for kw in patterns.get('keywords', []):
-        if isinstance(kw, str) and len(kw) > 0 and len(kw) < 100:
-            # Remove potentially dangerous characters
-            clean_kw = re.sub(r'[^\w\s\-$@.]+', '', kw).strip()
-            if clean_kw:
-                sanitized['keywords'].append(clean_kw.lower())
-    
-    # Validate regex patterns (test if they compile without errors)
-    for pattern in patterns.get('regex_patterns', []):
-        if isinstance(pattern, str) and len(pattern) > 0 and len(pattern) < 200:
+
+    for keyword in patterns.get("keywords", []):
+        if isinstance(keyword, str) and 0 < len(keyword) < 100:
+            clean = re.sub(r"[^\w\s\-$@./:]+", "", keyword).strip()
+            if clean:
+                sanitized["keywords"].append(clean.lower())
+
+    for pattern in patterns.get("regex_patterns", []):
+        if isinstance(pattern, str) and 0 < len(pattern) < 200:
             try:
-                # Test compile
-                re.compile(pattern, re.IGNORECASE)
-                sanitized['regex_patterns'].append(pattern)
+                re.compile(pattern)
+                sanitized["regex_patterns"].append(pattern)
             except re.error:
-                logger.warning(f"Invalid regex pattern skipped: {pattern}")
-   
+                logger.warning(f"Dropped invalid regex: {pattern}")
+
     return sanitized

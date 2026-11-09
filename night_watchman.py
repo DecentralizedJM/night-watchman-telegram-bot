@@ -8,6 +8,7 @@ import html
 import logging
 import os
 import re
+import secrets
 import sys
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, List
@@ -23,6 +24,7 @@ from behavior_profiler import BehaviorProfiler
 from context_analyzer import ContextAnalyzer
 from adaptive_thresholds import AdaptiveThresholds
 from redis_manager import RedisManager
+from local_rules import forward_source_allowed, is_mudrex_lookalike
 # Import Decision Engine
 try:
     from decision_engine import DecisionEngine
@@ -117,6 +119,9 @@ class NightWatchman:
         
         # Initialize Redis Manager
         self.redis = RedisManager()
+        self.pending_reviews: Dict[str, Dict] = {}
+        self.raid_until: Dict[int, datetime] = {}
+        self.detector.on_scam_learned = self._push_scam_text
         
         # Initialize Decision Engine
         if DecisionEngine:
@@ -415,6 +420,13 @@ class NightWatchman:
                 logger.info(f"🛡️ Immunity: loaded {len(immune_ids)} enhanced users from Redis")
             except Exception as e:
                 logger.warning(f"Could not load immune users from Redis: {e}")
+            try:
+                remembered = await self.redis.load_scam_texts()
+                added = self.detector.scam_memory.absorb(remembered)
+                if added:
+                    logger.info(f"🧠 Scam memory: absorbed {added} texts from Redis")
+            except Exception as e:
+                logger.warning(f"Could not load scam memory from Redis: {e}")
         
         # Initialize crypto tickers from exchanges (runs in background)
         asyncio.create_task(self._init_crypto_tickers())
@@ -547,7 +559,10 @@ class NightWatchman:
                 params = {
                     'offset': self.offset,
                     'timeout': 30,
-                    'allowed_updates': ['message', 'edited_message', 'chat_member', 'my_chat_member']
+                    'allowed_updates': [
+                        'message', 'edited_message', 'chat_member', 'my_chat_member',
+                        'callback_query', 'chat_join_request', 'message_reaction',
+                    ]
                 }
                 
                 response = await self.client.get(url, params=params, timeout=35.0)
@@ -580,13 +595,27 @@ class NightWatchman:
             if 'chat_member' in update:
                 await self._handle_chat_member(update['chat_member'])
                 return
+
+            if 'chat_join_request' in update:
+                await self._handle_join_request(update['chat_join_request'])
+                return
+
+            if 'callback_query' in update:
+                await self._handle_callback(update['callback_query'])
+                return
+
+            if 'message_reaction' in update:
+                await self._handle_message_reaction(update['message_reaction'])
+                return
             
             # Handle my_chat_member updates (bot's own status changes)
             if 'my_chat_member' in update:
                 # Don't track bot's own joins/exits
                 return
             
-            message = update.get('message')
+            edited_message = update.get('edited_message')
+            message = update.get('message') or edited_message
+            is_edit = bool(edited_message) and 'message' not in update
             if not message:
                 return
             
@@ -666,6 +695,8 @@ class NightWatchman:
             if chat_id and message_id and user_id:
                 message_key = f"{chat_id}_{message_id}"
                 self.message_authors[message_key] = user_id
+                if self.redis.enabled:
+                    await self.redis.remember_author(chat_id, message_id, user_id)
             
             # Only moderate group messages
             if chat_type not in ['group', 'supergroup']:
@@ -746,11 +777,13 @@ class NightWatchman:
                 logger.info(f"📷 PnL topic bypass: allowing image in topic {pnl_topic_id} (no deletion)")
                 return
             
-            # Track message in analytics and reputation (daily activity)
-            if self.config.ANALYTICS_ENABLED:
-                self.analytics.track_message(user_id, chat_id)
-            if self.config.REPUTATION_ENABLED:
-                self.reputation.track_daily_activity(user_id, username, user_name)
+            # Track message in analytics and reputation (daily activity).
+            # Edits are moderated, but they should not count as a new message.
+            if not is_edit:
+                if self.config.ANALYTICS_ENABLED:
+                    self.analytics.track_message(user_id, chat_id)
+                if self.config.REPUTATION_ENABLED:
+                    self.reputation.track_daily_activity(user_id, username, user_name)
             
             # Check for story shares (BAN ALL STORY SHARES)
             has_story = message.get('story')
@@ -837,8 +870,13 @@ class NightWatchman:
                         user_rep = self.reputation.get_user_rep(user_id)
                         is_vip_level = user_rep.get('level', '') == 'VIP'
                     
-                    if is_admin or is_vip or is_vip_level:
-                        pass  # Allow admins and VIPs
+                    known_forward = forward_source_allowed(
+                        message, getattr(self.config, "KNOWN_FORWARD_CHANNELS", [])
+                    )
+                    if is_admin or is_vip or is_vip_level or known_forward:
+                        if known_forward:
+                            logger.info(f"📤 Allowed forward from a known channel in {chat_id}")
+                        pass  # Allow admins, VIPs, and known channels
                     else:
                         # CRITICAL: Analyze forwarded message for spam BEFORE taking action
                         # This catches casino spam, bot links, porn, etc. in forwards (including stories)
@@ -885,7 +923,7 @@ class NightWatchman:
                             return
                         
                         # Legacy: Track forward violations (if not using instant ban)
-                        violations = self.detector.add_forward_violation(user_id)
+                        violations = await self._add_forward_strike(chat_id, user_id)
                         
                         if violations >= 2 or self.config.FORWARD_BAN_ON_REPEAT:
                             # Ban on repeat violation
@@ -1031,7 +1069,7 @@ class NightWatchman:
             
             # Get user join date for new user detection
             member_key = f"{chat_id}_{user_id}"
-            join_date = self.member_join_dates.get(member_key)
+            join_date = await self._lookup_join_date(chat_id, user_id)
             
             # Get user reputation for money emoji check
             user_rep = 0
@@ -1042,20 +1080,6 @@ class NightWatchman:
                 # Check if this is their first tracked message (no activity yet)
                 is_first_message = user_rep_data.get('total_messages', 0) == 0
             
-            # Check for photos
-            image_data = None
-            if message.get('photo') and getattr(self.config, 'GEMINI_ENABLED', False):
-                try:
-                    # Get largest photo
-                    photos = message.get('photo', [])
-                    if photos:
-                        largest_photo = sorted(photos, key=lambda x: x.get('file_size', 0), reverse=True)[0]
-                        file_id = largest_photo.get('file_id')
-                        if file_id:
-                            image_data = await self._download_photo(file_id)
-                except Exception as e:
-                    logger.error(f"Error processing photo: {e}")
-
             # Track message for behavior profiling
             if self.behavior_profiler:
                 message_timestamp = datetime.fromtimestamp(message.get('date', 0), tz=timezone.utc) if message.get('date') else datetime.now(timezone.utc)
@@ -1070,7 +1094,6 @@ class NightWatchman:
             result = await self.detector.analyze(
                 text, user_id, join_date, entities,
                 user_rep=user_rep, is_first_message=is_first_message,
-                image_data=image_data
             )
 
             # Track message for decision engine (needs analysis result)
@@ -1255,8 +1278,11 @@ class NightWatchman:
                         result=result
                     )
             elif result['action'] == 'flag':
-                # Log for review but don't act
                 logger.info(f"⚠️ Flagged message from {user_name}: {result['reasons']}")
+                if getattr(self.config, "REVIEW_BUTTONS_ENABLED", True) and self.admin_chat_id:
+                    await self._queue_review(
+                        chat_id, message_id, user_id, user_name, username, text, result
+                    )
             else:
                 # Message is clean - learn as ham from trusted users
                 # Only learn from VIP (100+) or Trusted (50+) users for quality samples
@@ -1310,6 +1336,8 @@ class NightWatchman:
             
             # Get the message author from our tracking
             message_author_id = self.message_authors.get(message_key)
+            if not message_author_id and self.redis.enabled:
+                message_author_id = await self.redis.get_author(chat_id, message_id)
             
             if not message_author_id:
                 logger.warning(f"Cannot find author for message {message_id} in chat {chat_id}. Tracked messages: {len(self.message_authors)}")
@@ -1385,7 +1413,7 @@ class NightWatchman:
                             f"✅ Action: Auto-banned"
                         )
                 return
-            
+
             # Also check for bot-like usernames (even if not marked as bot)
             if username and self.config.BLOCK_BOT_JOINS:
                 import re
@@ -1420,27 +1448,31 @@ class NightWatchman:
                     self.analytics.track_join(chat_id)
                 
                 # User just joined
-                member_key = f"{chat_id}_{user_id}"
                 join_time = datetime.now(timezone.utc)
-                self.member_join_dates[member_key] = join_time
-                
-                # Track for anti-raid
-                if chat_id not in self.recent_joins:
-                    self.recent_joins[chat_id] = []
-                self.recent_joins[chat_id].append(join_time)
-                
-                # Clean old joins
-                window = timedelta(minutes=self.config.RAID_DETECTION_WINDOW_MINUTES)
-                self.recent_joins[chat_id] = [
-                    t for t in self.recent_joins[chat_id] 
-                    if (join_time - t) < window
-                ]
+                join_count = await self._note_join(chat_id, user_id, join_time)
+
+                if username and is_mudrex_lookalike(username, getattr(self.config, "OFFICIAL_MUDREX_USERNAMES", None)):
+                    logger.warning(f"🎭 Lookalike {user_id} (@{username}) joined {chat_id}")
+                    banned = await self._ban_user(chat_id, user_id, force=True)
+                    if banned and self.admin_chat_id:
+                        await self._send_message(
+                            self.admin_chat_id,
+                            f"🎭 <b>Mudrex lookalike blocked</b>\n\n"
+                            f"👤 User: {html_escape(user_name)} (@{html_escape(username)})\n"
+                            f"🆔 ID: <code>{user_id}</code>\n"
+                            f"💬 Chat: <code>{chat_id}</code>",
+                            auto_delete=False,
+                        )
+                    return
                 
                 # Check for raid
                 if self.config.ANTI_RAID_ENABLED:
-                    if len(self.recent_joins[chat_id]) >= self.config.RAID_THRESHOLD_USERS:
-                        logger.warning(f"🚨 Possible raid detected in {chat_id}: {len(self.recent_joins[chat_id])} users joined")
-                        await self._handle_raid(chat_id, len(self.recent_joins[chat_id]))
+                    if join_count >= self.config.RAID_THRESHOLD_USERS:
+                        logger.warning(f"🚨 Possible raid detected in {chat_id}: {join_count} users joined")
+                        await self._handle_raid(chat_id, join_count)
+                    if await self._raid_active(chat_id):
+                        await self._mute_user(chat_id, user_id)
+                        logger.warning(f"🚨 Raid lock: muted new member {user_id} in {chat_id}")
                 
                 # Check CAS (Combot Anti-Spam) database
                 if self.config.CAS_ENABLED:
@@ -1535,7 +1567,7 @@ class NightWatchman:
         
         # Warn the user (for all spam detections, not just delete_and_warn)
         if self.config.AUTO_WARN_USER and result['is_spam']:
-            warnings = self.detector.add_warning(user_id)
+            warnings = await self._add_warning(chat_id, user_id)
             self.stats['users_warned'] += 1
 
             # Track in analytics
@@ -1657,7 +1689,7 @@ class NightWatchman:
         action = self.config.MEDIA_SPAM_ACTION  # "delete", "delete_and_warn", "delete_and_mute"
         
         if action == "delete_and_warn":
-            warnings = self.detector.add_warning(user_id)
+            warnings = await self._add_warning(chat_id, user_id)
             self.stats['users_warned'] += 1
             
             # Track in reputation
@@ -2150,40 +2182,22 @@ I am a spam detection bot that protects Telegram groups from:
         )
         
         patterns = None
-        
-        # Try to extract patterns using Gemini
-        extraction_status = "Skipped (Scanner disabled)"
-        if self.detector.gemini_scanner and self.detector.gemini_scanner.enabled:
-            try:
-                from pattern_extractor import extract_patterns_from_description, validate_and_sanitize_patterns
-                
-                patterns = await extract_patterns_from_description(
-                    self.detector.gemini_scanner,
-                    description
-                )
-                
-                if patterns:
-                    # Validate and sanitize  
-                    patterns = validate_and_sanitize_patterns(patterns)
-                    logger.info(f"✅ Extracted patterns: {patterns}")
-                    extraction_status = "Success"
-                else:
-                    logger.warning("Failed to extract patterns from description")
-                    extraction_status = "Failed (No patterns found)"
-                    
-            except ImportError as e:
-                logger.error(f"Pattern extractor import error: {e}")
-                extraction_status = "Failed (Missing module)"
-            except Exception as e:
-                logger.error(f"Pattern extraction error: {e}")
-                extraction_status = f"Failed ({str(e)[:50]})"
+        extraction_status = "Local"
+        try:
+            from pattern_extractor import extract_patterns_locally, validate_and_sanitize_patterns
+
+            patterns = validate_and_sanitize_patterns(extract_patterns_locally(description))
+            logger.info(f"✅ Extracted patterns: {patterns}")
+        except Exception as e:
+            logger.error(f"Pattern extraction error: {e}")
+            extraction_status = f"Failed ({str(e)[:50]})"
         
         # Add to ML training data (always, even if pattern extraction failed)
         ml_status = "Skipped (ML disabled)"
         try:
-            # Add the description itself as a spam example
+            self.detector.learn_spam(description)
+
             if hasattr(self.detector, 'ml_classifier') and self.detector.ml_classifier:
-                self.detector.ml_classifier.add_spam_sample(description)
                 logger.info(f"📝 Added scam example to ML training data")
                 
                 # Auto-retrain ML model immediately
@@ -2436,7 +2450,7 @@ I am a spam detection bot that protects Telegram groups from:
                 )
         elif action in ['warn', 'delete_and_warn']:
             # Warn user and track warnings
-            warnings = self.detector.add_warning(user_id)
+            warnings = await self._add_warning(chat_id, user_id)
             self.stats['users_warned'] += 1
 
             # Track in analytics
@@ -2565,6 +2579,11 @@ I am a spam detection bot that protects Telegram groups from:
         if self.config.ANALYTICS_ENABLED:
             self.analytics.track_raid_alert(chat_id)
         
+        lock_minutes = getattr(self.config, "RAID_LOCK_MINUTES", 15)
+        self.raid_until[chat_id] = datetime.now(timezone.utc) + timedelta(minutes=lock_minutes)
+        if self.redis.enabled:
+            await self.redis.set_raid_mode(chat_id, lock_minutes * 60)
+
         if self.admin_chat_id:
             report = f"""🚨 <b>RAID DETECTED</b>
 
@@ -2572,8 +2591,8 @@ I am a spam detection bot that protects Telegram groups from:
 👥 Users joined: <b>{user_count}</b>
 ⏰ Time window: {self.config.RAID_DETECTION_WINDOW_MINUTES} minutes
 
-⚠️ Multiple users joined in a short time. This might be a coordinated attack."""
-            await self._send_message(self.admin_chat_id, report)
+⚠️ Multiple users joined in a short time. New joins are muted and join requests are declined for {lock_minutes} minutes."""
+            await self._send_message(self.admin_chat_id, report, auto_delete=False)
     
     async def _send_welcome_message(self, chat_id: int, user: Dict):
         """Send welcome message to new member"""
@@ -2802,7 +2821,7 @@ I am a spam detection bot that protects Telegram groups from:
         
         if command == '/warn':
             if target_user_id:
-                warnings = self.detector.add_warning(target_user_id)
+                warnings = await self._add_warning(chat_id, target_user_id)
                 self.stats['users_warned'] += 1
                 await self._send_message(
                     chat_id,
@@ -2864,7 +2883,7 @@ I am a spam detection bot that protects Telegram groups from:
                 
         elif command == '/unwarn':
             if target_user_id:
-                self.detector.clear_warnings(target_user_id)
+                await self._clear_warning(chat_id, target_user_id)
                 await self._send_message(chat_id, f"✅ Warnings cleared for <b>{target_name}</b>.")
                 
                 # Learn ham from unwarned message (if reply-to) - indicates false positive
@@ -3312,12 +3331,13 @@ No CAS ban record found."""
             logger.error(f"CAS API error: {e}")
             return {"banned": False, "error": str(e)}
     
-    async def _ban_user(self, chat_id: int, user_id: int) -> bool:
+    async def _ban_user(self, chat_id: int, user_id: int, force: bool = False) -> bool:
         """Ban a user"""
         
         # DECISION ENGINE CHECK:
-        # Before banning, check if user history warrants leniency
-        if self.decision_engine:
+        # Before banning, check if user history warrants leniency.
+        # force=True is for admin clicks, lookalikes, and raid locks.
+        if self.decision_engine and not force:
             # Determine violation type based on context (not passed explicitly so infer)
             violation_type = "generic"
             
@@ -3375,7 +3395,236 @@ No CAS ban record found."""
             logger.error(f"Error banning user: {e}")
         return False
     
-    async def _send_message(self, chat_id, text: str, auto_delete: bool = None) -> Dict:
+    def _push_scam_text(self, text: str):
+        """Persist a confirmed scam into Redis without blocking the caller."""
+        if self.redis.enabled and text:
+            asyncio.create_task(self.redis.add_scam_text(text))
+
+    async def _add_warning(self, chat_id: int, user_id: int) -> int:
+        if self.redis.enabled:
+            count = await self.redis.add_warning(
+                user_id, chat_id, ttl=getattr(self.config, "WARNING_TTL_SECONDS", 7 * 86400)
+            )
+            if count:
+                self.detector.user_warnings[user_id] = count
+                return count
+        return self.detector.add_warning(user_id)
+
+    async def _clear_warning(self, chat_id: int, user_id: int):
+        self.detector.clear_warnings(user_id)
+        if self.redis.enabled:
+            await self.redis.clear_warnings(user_id, chat_id)
+
+    async def _add_forward_strike(self, chat_id: int, user_id: int) -> int:
+        if self.redis.enabled:
+            count = await self.redis.add_forward_strike(chat_id, user_id)
+            if count:
+                self.detector.forward_violators[user_id] = count
+                return count
+        return self.detector.add_forward_violation(user_id)
+
+    async def _lookup_join_date(self, chat_id: int, user_id: int) -> Optional[datetime]:
+        member_key = f"{chat_id}_{user_id}"
+        join_date = self.member_join_dates.get(member_key)
+        if join_date or not self.redis.enabled:
+            return join_date
+        timestamp = await self.redis.get_join_time(chat_id, user_id)
+        if not timestamp:
+            return None
+        join_date = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+        self.member_join_dates[member_key] = join_date
+        return join_date
+
+    async def _note_join(self, chat_id: int, user_id: int, join_time: datetime) -> int:
+        member_key = f"{chat_id}_{user_id}"
+        self.member_join_dates[member_key] = join_time
+        if chat_id not in self.recent_joins:
+            self.recent_joins[chat_id] = []
+        self.recent_joins[chat_id].append(join_time)
+        window = timedelta(minutes=self.config.RAID_DETECTION_WINDOW_MINUTES)
+        self.recent_joins[chat_id] = [
+            stamp for stamp in self.recent_joins[chat_id] if (join_time - stamp) < window
+        ]
+        if self.redis.enabled:
+            count = await self.redis.record_join(
+                chat_id, user_id, int(window.total_seconds())
+            )
+            if count:
+                return count
+        return len(self.recent_joins[chat_id])
+
+    async def _raid_active(self, chat_id: int) -> bool:
+        until = self.raid_until.get(chat_id)
+        if until and datetime.now(timezone.utc) < until:
+            return True
+        if self.redis.enabled and await self.redis.raid_mode_active(chat_id):
+            return True
+        return False
+
+    async def _queue_review(self, chat_id, message_id, user_id, user_name, username, text, result):
+        token = secrets.token_hex(4)
+        payload = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "user_id": user_id,
+            "user_name": user_name,
+            "username": username or "",
+            "text": (text or "")[:500],
+        }
+        self.pending_reviews[token] = payload
+        if self.redis.enabled:
+            await self.redis.store_review(token, payload)
+
+        reasons = ", ".join(result.get("reasons") or []) or "borderline score"
+        safe_text = html_escape((text or "")[:400]) or "[no text]"
+        card = (
+            f"⚠️ <b>Review</b>\n\n"
+            f"👤 {html_escape(user_name)} (@{html_escape(username or 'N/A')})\n"
+            f"🆔 <code>{user_id}</code>\n"
+            f"💬 Chat: <code>{chat_id}</code>\n"
+            f"📊 Score: {result.get('spam_score', 0):.2f}\n"
+            f"📝 {html_escape(reasons[:300])}\n\n"
+            f"<code>{safe_text}</code>"
+        )
+        markup = {
+            "inline_keyboard": [[
+                {"text": "Ban", "callback_data": f"nw:b:{token}"},
+                {"text": "Mute", "callback_data": f"nw:m:{token}"},
+                {"text": "Fine", "callback_data": f"nw:f:{token}"},
+            ]]
+        }
+        await self._send_message(self.admin_chat_id, card, auto_delete=False, reply_markup=markup)
+
+    async def _take_review(self, token: str) -> Optional[Dict]:
+        payload = self.pending_reviews.pop(token, None)
+        if payload:
+            if self.redis.enabled:
+                await self.redis.pop_review(token)
+            return payload
+        if self.redis.enabled:
+            return await self.redis.pop_review(token)
+        return None
+
+    async def _reviewer_allowed(self, actor_id: int, chat_id: int) -> bool:
+        if actor_id in getattr(self.config, "ADMIN_USER_IDS", []):
+            return True
+        admin_chat = self.admin_chat_id
+        try:
+            if admin_chat is not None and actor_id == int(admin_chat):
+                return True
+        except (TypeError, ValueError):
+            pass
+        return await self._is_admin(chat_id, actor_id)
+
+    async def _handle_callback(self, callback: Dict):
+        callback_id = callback.get("id")
+        data = callback.get("data") or ""
+        actor = callback.get("from", {})
+        actor_id = actor.get("id")
+        parts = data.split(":")
+        if len(parts) != 3 or parts[0] != "nw" or parts[1] not in {"b", "m", "f"}:
+            await self._answer_callback(callback_id, "Unknown action")
+            return
+
+        payload = await self._take_review(parts[2])
+        if not payload:
+            await self._answer_callback(callback_id, "This review expired")
+            return
+        if not await self._reviewer_allowed(actor_id, payload["chat_id"]):
+            self.pending_reviews[parts[2]] = payload
+            await self._answer_callback(callback_id, "Admins only")
+            return
+
+        action = parts[1]
+        chat_id = payload["chat_id"]
+        user_id = payload["user_id"]
+        message_id = payload["message_id"]
+        text = payload.get("text") or ""
+        label = {"b": "Banned", "m": "Muted", "f": "Marked fine"}[action]
+
+        if action == "b":
+            await self._delete_message(chat_id, message_id)
+            await self._ban_user(chat_id, user_id, force=True)
+            if len(text) > 15:
+                self.detector.learn_spam(text)
+        elif action == "m":
+            await self._delete_message(chat_id, message_id)
+            await self._mute_user(chat_id, user_id)
+            if len(text) > 15:
+                self.detector.learn_spam(text)
+        else:
+            if len(text) > 15:
+                self.detector.learn_ham(text)
+            await self._clear_warning(chat_id, user_id)
+            if self.adaptive_thresholds:
+                self.adaptive_thresholds.record_admin_action(chat_id, 0.3, "unwarn")
+
+        await self._answer_callback(callback_id, label)
+        message = callback.get("message") or {}
+        if message.get("message_id") and message.get("chat"):
+            await self._edit_message(
+                message["chat"]["id"],
+                message["message_id"],
+                f"✅ {label} by <code>{actor_id}</code>\n"
+                f"👤 <code>{user_id}</code>\n"
+                f"<code>{html_escape(text[:300]) or '[no text]'}</code>",
+            )
+
+    async def _answer_callback(self, callback_id: str, text: str):
+        if not callback_id:
+            return
+        try:
+            url = f"https://api.telegram.org/bot{self.token}/answerCallbackQuery"
+            await self.client.post(url, json={"callback_query_id": callback_id, "text": text}, timeout=10.0)
+        except Exception as exc:
+            logger.error(f"Callback answer failed: {exc}")
+
+    async def _handle_join_request(self, request: Dict):
+        chat = request.get("chat") or {}
+        user = request.get("from") or {}
+        chat_id = chat.get("id")
+        user_id = user.get("id")
+        username = user.get("username") or ""
+        if not chat_id or not user_id:
+            return
+
+        decline = False
+        reason = ""
+        if is_mudrex_lookalike(username, getattr(self.config, "OFFICIAL_MUDREX_USERNAMES", None)):
+            decline = True
+            reason = "Mudrex lookalike"
+        elif await self._raid_active(chat_id):
+            decline = True
+            reason = "Raid lock"
+        elif self.config.CAS_ENABLED:
+            cas_result = await self._check_cas(user_id)
+            if cas_result.get("banned"):
+                decline = True
+                reason = "CAS"
+
+        method = "declineChatJoinRequest" if decline else "approveChatJoinRequest"
+        try:
+            url = f"https://api.telegram.org/bot{self.token}/{method}"
+            response = await self.client.post(
+                url, json={"chat_id": chat_id, "user_id": user_id}, timeout=10.0
+            )
+            ok = response.json().get("ok", False)
+            logger.info(f"Join request {method} for {user_id} in {chat_id}: {ok} ({reason or 'clear'})")
+        except Exception as exc:
+            logger.error(f"Join request handling failed: {exc}")
+            return
+
+        if decline and self.admin_chat_id:
+            await self._send_message(
+                self.admin_chat_id,
+                f"🚫 <b>Join request declined</b>\n\n"
+                f"👤 @{html_escape(username or 'N/A')} <code>{user_id}</code>\n"
+                f"💬 Chat: <code>{chat_id}</code>\n"
+                f"Reason: {html_escape(reason)}",
+                auto_delete=False,
+            )
+
+    async def _send_message(self, chat_id, text: str, auto_delete: bool = None, reply_markup: Dict = None) -> Dict:
         """Send a message and optionally auto-delete after delay. Returns full response dict."""
         try:
             url = f"https://api.telegram.org/bot{self.token}/sendMessage"
@@ -3384,6 +3633,8 @@ No CAS ban record found."""
                 'text': text,
                 'parse_mode': 'HTML'
             }
+            if reply_markup:
+                data['reply_markup'] = reply_markup
             response = await self.client.post(url, json=data, timeout=10.0)
             result = response.json()
             
